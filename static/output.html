@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+  @page {
+    size: A4;
+    margin: 2cm 2.2cm 2.2cm 2.2cm;
+    @bottom-center {
+      content: string(footer);
+      font-size: 10pt;
+      color: #555;
+    }
+  }
+
+  /* Font: ARIAL everywhere */
+  * { box-sizing: border-box; }
+  html, body { font-family: Arial, sans-serif; color:#000; }
+
+  /* Headings spec */
+  h1, h2, h3 { margin: 0 0 8px 0; }
+  h1 {
+    font-size: 12pt; font-weight: 700; text-transform: uppercase;
+    text-decoration: underline;
+  }
+  h2 { font-size: 12pt; font-weight: 700; }
+  h3 { font-size: 11pt; font-weight: 700; }
+
+  .header { text-align:center; margin-bottom: 12px; }
+  .logo { height: 70px; display:block; margin: 0 auto 8px auto; }
+
+  /* Title shown as H1 for style compliance */
+  .title { margin-top: 6px; }
+  .title h1 { display: inline-block; }
+
+  .ref { margin-top:6px; font-weight:700; font-size: 11pt; }
+
+  .meta {
+    margin-top:12px; font-size: 11pt;
+    border-collapse:collapse; width:100%;
+  }
+  .meta td { padding: 3px 0; vertical-align:top; }
+  .meta td:first-child { width: 130px; font-weight:700; }
+
+  .section { margin-top: 12px; }
+
+  /* Grid for items + tags (Makluman/Tindakan) */
+  .items { margin-top: 4px; }
+  .item {
+    display:grid;
+    grid-template-columns: 28px auto 120px; /* no., text, tag */
+    column-gap: 10px;
+    align-items:start;
+    margin: 2px 0;
+    font-size: 11pt;
+  }
+  .item .no { font-weight:700; }
+  .item .text { line-height:1.4; }
+  .item .tag { text-align:right; font-weight:700; white-space:nowrap; }
+
+  /* sub-level indent */
+  .item.sub1 { margin-left: 18px; }
+  .item.sub2 { margin-left: 36px; }
+  .item.sub3 { margin-left: 54px; }
+
+  .text p { margin: 0 0 5px 0; text-align: justify; }
+  .text ul, .text ol { margin: 0 0 6px 18px; }
+
+  /* Markdown table styling */
+  table.md {
+    border-collapse: collapse; width:100%; margin: 8px 0;
+    font-size: 11pt;
+  }
+  table.md th, table.md td { border: 1px solid #777; padding: 6px; }
+  table.md th { font-weight:700; }
+
+  #footer { string-set: footer content(attr(data-footer)); }
+</style>
+</head>
+<body>
+  <div id="footer" data-footer="SULIT"></div>
+
+<div class="header">
+  <img src="asset/logo.png" class="logo" />
+
+  <div class="title">
+    <h1>MINIT MESYUARAT JAWATANKUASA TEKNIKAL</h1>
+  </div>
+
+  <div class="ref">Rujukan: PDRM/MM/2025/001</div>
+</div>
+
+  <table class="meta">
+    <tr><td>Bil. Mesyuarat</td><td>: 1/2025</td></tr>
+    <tr><td>Tarikh</td><td>: 5 November 2025</td></tr>
+    <tr><td>Masa</td><td>: 10:00 Pagi - 12:00 Tengahari</td></tr>
+    <tr><td>Tempat</td><td>: Bilik Mesyuarat Utama, IPK</td></tr>
+  </table>
+
+  <!-- BODY: already pre-cleaned markdown->HTML with our wrappers -->
+  <div class="section">
+    <h2>KEHADIRAN</h2>
+    <div class="items">
+      <div class="item">
+        <div class="no">1.</div>
+        <div class="text">YDH Dato' Sri XXX (Pengerusi)</div>
+        <div class="tag">Hadir</div>
+      </div>
+      <div class="item">
+        <div class="no">2.</div>
+        <div class="text">Tuan XXX</div>
+        <div class="tag">Hadir</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>AGENDA 1: PEMBUKAAN</h2>
+    <div class="items">
+      <div class="item">
+        <div class="no">1.1</div>
+        <div class="text">
+          <p>Mesyuarat dimulakan pada jam 10:00 pagi dengan ucapan aluan oleh Pengerusi.</p>
+        </div>
+        <div class="tag">Makluman</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>AGENDA 2: PERBINCANGAN</h2>
+    <div class="items">
+      <div class="item">
+        <div class="no">2.1</div>
+        <div class="text">
+          <p>Membincangkan status projek semasa.</p>
+        </div>
+        <div class="tag">Perbincangan</div>
+      </div>
+      <div class="item sub1">
+        <div class="no">a)</div>
+        <div class="text">
+          <p>Laporan kemajuan dibentangkan</p>
+        </div>
+        <div class="tag">Tindakan</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

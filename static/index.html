@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDRM • Audio Transcription & Meeting Minutes</title>
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;700&display=swap" rel="stylesheet">
+  <!-- Markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+  <style>
+
+    :root {
+      /* PDRM Brand Palette */
+      --navy-900: #0a1733;
+      --navy-800: #0f2249;
+      --navy-700: #183569;
+      --navy-600: #1f4788;
+      --accent-royal: #2563eb;
+      --gold-500: #d4af37;
+      --gold-600: #b9961f;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --muted: #64748b;
+      --text: #0f172a;
+      --success: #059669;
+      --error: #dc2626;
+      --warning: #d97706;
+      --border: #e2e8f0;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.05);
+      --shadow-md: 0 4px 20px rgba(10, 23, 51, .08);
+      --shadow-lg: 0 8px 30px rgba(10, 23, 51, .12);
+      --radius: 12px;
+      --header-h: 68px;
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-display: 'Plus Jakarta Sans', var(--font-sans);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0b1220;
+      --card: #111827;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --border: #1e293b;
+      --shadow-md: 0 8px 30px rgba(0,0,0,.5);
+      --shadow-lg: 0 12px 36px rgba(0,0,0,.6);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji';
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 80% -10%, rgba(31,71,136,.08), transparent),
+                  radial-gradient(1000px 700px at -10% 120%, rgba(212,175,55,.08), transparent),
+                  var(--bg);
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: var(--header-h) 1fr;
+      grid-template-areas:
+        "header"
+        "main";
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .scroll-container {
+      overflow-y: auto;
+      height: 100%;
+      padding: 32px 40px;
+    }
+
+    @media (max-width: 768px) {
+      .scroll-container {
+        padding: 24px 20px;
+      }
+    }
+
+    /* Header */
+    header {
+      grid-area: header;
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px 0 20px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: saturate(180%) blur(12px);
+      -webkit-backdrop-filter: saturate(180%) blur(12px);
+      background: linear-gradient(180deg, rgba(10,23,51,.75), rgba(10,23,51,.65));
+      color: #fff;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .crest {
+      width: 40px; height: 40px; display: grid; place-items: center;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--gold-500), var(--gold-600));
+      box-shadow: inset 0 1px 2px rgba(255,255,255,.3), inset 0 -1px 2px rgba(0,0,0,.1);
+    }
+    .brand h1 {
+      margin: 0; font: 700 18px "Plus Jakarta Sans", Inter, sans-serif; letter-spacing: .3px;
+    }
+    .brand small { display:block; font-weight:500; opacity:.9 }
+
+    .header-actions { display:flex; align-items:center; gap: 16px; }
+    .user-info { display:flex; align-items:center; gap: 12px; }
+    .user-name { font-weight: 600; color: #fff; }
+    .logout-link { color: #dbeafe; text-decoration: none; font-weight: 500; transition: color 0.2s; }
+    .logout-link:hover { color: #fff; }
+    .chip {
+      padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25);
+      font-size: 12px; opacity:.95
+    }
+    .toggle {
+      display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;
+      padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25);
+    }
+    .toggle input { display:none; }
+
+
+    /* Main */
+    main {
+      grid-area: main;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .page-header h2 {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+      color: var(--navy-800);
+      letter-spacing: -0.02em;
+    }
+    [data-theme="dark"] .page-header h2 {
+      color: #fff;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
+      border-radius: var(--radius);
+      margin-bottom: 32px;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .card:hover {
+      box-shadow: var(--shadow-lg);
+      border-color: var(--navy-600);
+      transform: translateY(-1px);
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(135deg, var(--navy-600), var(--gold-500));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .card:hover::before {
+      opacity: 1;
+    }
+    .card:last-child {
+      margin-bottom: 0;
+    }
+    .card .card-hd {
+      padding: 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(to bottom, rgba(31,71,136,.02), transparent);
+    }
+    .card .card-hd h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: .2px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--navy-800);
+    }
+    .card .card-bd {
+      padding: 24px;
+    }
+
+    [data-theme="dark"] {
+      --shadow-lg: 0 12px 32px rgba(0,0,0,.55);
+      --bg: #0b1220;
+      --card: #0f1a2b;
+      --text: #e5e7eb;
+      --muted: #9aa3b2;
+      --border: #1f2a3d;
+      --shadow-md: 0 8px 28px rgba(0,0,0,.45);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 40px;
+      align-items: start;
+      margin-top: 32px;
+    }
+    @media (max-width: 1200px){
+      .grid-2 {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+      .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+    }
+    @media (max-width: 768px){
+      .container {
+        padding: 0 16px;
+      }
+      .grid-2 {
+        margin-top: 24px;
+        gap: 24px;
+      }
+    }
+
+    .form-row {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 16px;
+    }
+    .form-row:last-child {
+      margin-bottom: 0;
+    }
+    @media (max-width: 680px){
+      .form-row {
+        grid-template-columns: 1fr;
+        margin-bottom: 12px;
+      }
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: .3px;
+      display: inline-block;
+      margin-bottom: 8px;
+      font-family: var(--font-sans);
+    }
+    .control {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 10px;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s ease;
+      font-family: var(--font-sans);
+      letter-spacing: 0.2px;
+    }
+    .control:hover {
+      border-color: var(--navy-600);
+      background: linear-gradient(to bottom, var(--card), rgba(31,71,136,.02));
+    }
+    .control:focus {
+      border-color: var(--navy-600);
+      box-shadow: 0 0 0 4px rgba(31,71,136,.1);
+      background: var(--card);
+    }
+
+    .dropzone {
+      border: 2px dashed rgba(31,71,136,.35);
+      padding: 40px 24px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(31,71,136,.04), rgba(212,175,55,.04));
+      display: grid;
+      place-items: center;
+      gap: 16px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 8px;
+      transition: all 0.2s ease;
+      pointer-events: auto;
+      z-index: 1;
+    }
+    .dropzone:hover {
+      border-color: var(--navy-600);
+      background: linear-gradient(180deg, rgba(31,71,136,.06), rgba(212,175,55,.06));
+      transform: translateY(-1px);
+    }
+    .dropzone svg {
+      color: var(--navy-600);
+      opacity: 0.8;
+      transition: transform 0.2s ease;
+    }
+    .dropzone:hover svg {
+      transform: scale(1.1);
+      opacity: 1;
+    }
+    .dropzone .dz-help {
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+    .file-name {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+
+    .btn {
+      appearance: none;
+      border: 0;
+      padding: 12px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: .3px;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: center;
+      transition: all 0.2s ease;
+      font-size: 14px;
+      position: relative;
+      overflow: hidden;
+      font-family: var(--font-sans);
+    }
+    .btn::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(to right, transparent, rgba(255,255,255,.1), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s ease;
+    }
+    .btn:hover::after {
+      transform: translateX(100%);
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { color: #fff; background: linear-gradient(135deg, var(--navy-700), var(--navy-600)); box-shadow: 0 6px 16px rgba(31,71,136,.25); }
+    .btn-primary:hover { filter: brightness(1.03); }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline { background: transparent; border: 1px solid var(--navy-600); color: var(--navy-700); }
+    .btn-danger { background: linear-gradient(135deg, #b91c1c, #dc2626); color:#fff; }
+    .btn-group { display:flex; gap: 10px; flex-wrap: wrap; }
+
+    .textarea {
+      width: 100%;
+      min-height: 260px;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      line-height: 1.75;
+      resize: vertical;
+      font-size: 14px;
+      font-family: var(--font-sans);
+      letter-spacing: 0.2px;
+      transition: all 0.2s ease;
+    }
+    .textarea:hover {
+      border-color: var(--navy-600);
+      background: linear-gradient(to bottom, var(--card), rgba(31,71,136,.02));
+    }
+    .textarea:focus {
+      border-color: var(--navy-600);
+      box-shadow: 0 0 0 4px rgba(31,71,136,.1);
+      background: var(--card);
+      outline: none;
+    }
+
+    .badge { font-size: 12px; padding: 6px 10px; border-radius: 999px; border:1px solid var(--border); color: var(--muted); background: rgba(31,71,136,.06); }
+
+    .status {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      padding: 16px 28px;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      display: none;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      font-family: var(--font-sans);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      min-width: 300px;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: currentColor;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status.loading {
+      background: linear-gradient(135deg, #1e40af, #3b82f6);
+      color: #ffffff;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 8px 32px rgba(30, 64, 175, 0.4);
+    }
+    @keyframes slideDown {
+      from {
+        transform: translate(-50%, -120%);
+        opacity: 0;
+      }
+      to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+    }
+    .status[aria-hidden="false"] {
+      display: flex;
+    }
+    .status.success {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: #ffffff;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 8px 32px rgba(5, 150, 105, 0.4);
+    }
+    .status.error {
+      background: linear-gradient(135deg, #dc2626, #ef4444);
+      color: #ffffff;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 8px 32px rgba(220, 38, 38, 0.4);
+    }
+
+    .preview {
+      border: 1px solid var(--border);
+      padding: 40px;
+      border-radius: var(--radius);
+      background: var(--card);
+      margin-top: 24px;
+      font-size: 11pt;
+      line-height: 1.5;
+      font-family: var(--font-sans);
+      box-shadow: var(--shadow-md);
+      max-width: 210mm; /* A4 width */
+      margin-left: auto;
+      margin-right: auto;
+      transition: var(--transition);
+    }
+    .preview:hover {
+      border-color: var(--navy-600);
+      box-shadow: var(--shadow-lg);
+    }
+
+    @media print {
+      .preview {
+        box-shadow: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        max-width: none;
+      }
+    }
+
+    /* PDRM Template Styles */
+    .preview .header {
+      text-align: center;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--navy-600);
+    }
+    .preview .logo {
+      height: 70px;
+      display: block;
+      margin: 0 auto 12px auto;
+    }
+    .preview .title {
+      margin-top: 8px;
+    }
+    .preview .title h1 {
+      display: inline-block;
+      font-size: 14pt;
+      font-weight: 700;
+      font-family: var(--font-display);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0 0 8px 0;
+      color: var(--navy-800);
+      border-bottom: 2px solid var(--gold-500);
+      padding-bottom: 4px;
+    }
+    .preview .ref {
+      margin-top:6px;
+      font-weight:700;
+      font-size: 11pt;
+    }
+    .preview .meta {
+      margin-top:12px;
+      font-size: 11pt;
+      border-collapse:collapse;
+      width:100%;
+    }
+    .preview .meta td {
+      padding: 3px 0;
+      vertical-align:top;
+    }
+    .preview .meta td:first-child {
+      width: 130px;
+      font-weight:700;
+    }
+
+    /* Section and Item Styles */
+    .preview .section {
+      margin-top: 24px;
+      page-break-inside: avoid;
+    }
+    .preview .items {
+      margin-top: 8px;
+      display: grid;
+      gap: 4px;
+    }
+    .preview .item {
+      display: grid;
+      grid-template-columns: 28px auto 120px;
+      column-gap: 10px;
+      align-items: start;
+      margin: 2px 0;
+      font-size: 11pt;
+    }
+    .preview .item .no { font-weight: 700; }
+    .preview .item .text { line-height: 1.4; }
+    .preview .item .tag {
+      text-align: right;
+      font-weight: 600;
+      white-space: nowrap;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10pt;
+    }
+    /* Tag colors */
+    .preview .item .tag:contains('Information') {
+      color: #1e40af;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+    }
+    .preview .item .tag:contains('Action') {
+      color: #b91c1c;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+    }
+    .preview .item .tag:contains('Discussion') {
+      color: #065f46;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+    }
+    .preview .item .tag:contains('Present') {
+      color: #065f46;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+    }
+    .preview .item .tag:contains('Absent') {
+      color: #b91c1c;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+    }
+    .preview .item.sub1 { margin-left: 18px; }
+    .preview .item.sub2 { margin-left: 36px; }
+    .preview .item.sub3 { margin-left: 54px; }
+
+    /* Content Elements */
+    .preview h2 {
+      font-size: 12pt;
+      font-weight: 700;
+      margin: 24px 0 12px 0;
+      color: var(--navy-800);
+      border-bottom: 2px solid var(--navy-600);
+      padding-bottom: 6px;
+      page-break-after: avoid;
+    }
+    .preview h3 {
+      font-size: 11pt;
+      font-weight: 700;
+      margin: 12px 0 6px 0;
+    }
+    .preview p {
+      margin: 0 0 8px 0;
+      text-align: justify;
+    }
+    .preview table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 11pt;
+    }
+    .preview th,
+    .preview td {
+      border: 1px solid #777;
+      padding: 6px;
+      text-align: left;
+    }
+    .preview th {
+      font-weight: 700;
+    }
+    .preview ul,
+    .preview ol {
+      margin: 0 0 8px 18px;
+    }
+    .preview li {
+      margin-bottom: 4px;
+    }
+    .preview blockquote {
+      margin: 8px 0;
+      padding: 8px 16px;
+      border-left: 3px solid #1f4788;
+      background: #f8f9fc;
+      color: #555;
+    }
+    [data-theme="dark"] .preview {
+      background: var(--card);
+      border-color: var(--border);
+      box-shadow: var(--shadow-lg);
+    }
+    [data-theme="dark"] .preview h1,
+    [data-theme="dark"] .preview h2,
+    [data-theme="dark"] .preview h3 {
+      color: #f1f5f9;
+    }
+    [data-theme="dark"] .preview h2 {
+      border-color: var(--navy-700);
+    }
+    [data-theme="dark"] .preview .header {
+      border-color: var(--navy-700);
+    }
+    [data-theme="dark"] .preview .title h1 {
+      color: #f1f5f9;
+      border-color: var(--gold-500);
+    }
+    [data-theme="dark"] .preview .item .tag:contains('Information') {
+      color: #93c5fd;
+      background: rgba(30, 64, 175, 0.2);
+      border-color: #1e40af;
+    }
+    [data-theme="dark"] .preview .item .tag:contains('Action') {
+      color: #fca5a5;
+      background: rgba(185, 28, 28, 0.2);
+      border-color: #b91c1c;
+    }
+    [data-theme="dark"] .preview .item .tag:contains('Discussion') {
+      color: #6ee7b7;
+      background: rgba(6, 95, 70, 0.2);
+      border-color: #065f46;
+    }
+    [data-theme="dark"] .preview .item .tag:contains('Present') {
+      color: #6ee7b7;
+      background: rgba(6, 95, 70, 0.2);
+      border-color: #065f46;
+    }
+    [data-theme="dark"] .preview .item .tag:contains('Absent') {
+      color: #fca5a5;
+      background: rgba(185, 28, 28, 0.2);
+      border-color: #b91c1c;
+    }
+
+    .meta-row { display:flex; align-items:center; gap: 8px; flex-wrap: wrap; }
+
+    /* Mobile */
+    @media (max-width: 800px) {
+      header {
+        padding: 0 16px;
+      }
+      .brand h1 {
+        font-size: 16px;
+      }
+      .brand small {
+        font-size: 12px;
+      }
+      .header-actions {
+        gap: 8px;
+      }
+      .user-info {
+        gap: 8px;
+      }
+      .scroll-container {
+        padding: 20px 16px;
+      }
+      .card {
+        margin-bottom: 24px;
+      }
+      .card .card-hd {
+        padding: 20px;
+      }
+      .card .card-bd {
+        padding: 20px;
+      }
+      .preview {
+        padding: 24px 20px;
+      }
+      .form-row {
+        gap: 12px;
+      }
+      .btn-group {
+        gap: 8px;
+      }
+      .btn {
+        padding: 10px 16px;
+        font-size: 13px;
+      }
+      .user-name {
+        display: none;
+      }
+      .chip {
+        display: none;
+      }
+      .toggle {
+        display: none;
+      }
+      .logout-link {
+        background: transparent;
+        border: 1px solid rgba(255,255,255,.5);
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="crest" aria-hidden="true">
+        <!-- Minimal crest placeholder -->
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <circle cx="12" cy="8" r="3"/>
+          <path d="M3 21c2.5-5 7-8 9-8s6.5 3 9 8"/>
+        </svg>
+      </div>
+      <div>
+        <h1>PDRM AI Minutes Of Meeting Assistant</h1>
+        <small style="opacity:.85">Internal Application • Confidential</small>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="user-info">
+        <span class="user-name">{{ user["username"] }}</span>
+        <a href="/logout" class="logout-link" title="Log out">Log out</a>
+      </div>
+      <span class="chip">v1.0</span>
+      <!-- <label class="toggle" title="Toggle light/dark mode">
+        <input id="themeToggle" type="checkbox"/>
+        <span>Dark</span>
+      </label> -->
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+    <div class="scroll-container">
+      <div class="container">
+      <!-- Block: Transcription + Process -->
+      <div class="page-header">
+        <h2>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 16px">
+            <path d="M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          </svg>
+          Upload & Transcribe Audio
+        </h2>
+        <div class="meta-row">
+        </div>
+      </div>
+
+      <section class="grid-2">
+          <!-- Left: Upload & raw transcript -->
+          <div>
+            <form id="transcriptionForm" aria-describedby="formHelp">
+              <div class="form-row">
+                <div>
+                  <label for="audioFile">Audio/Video File</label>
+                  <div class="dropzone" onclick="document.getElementById('audioFile').click(); console.log('Box clicked!');">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12l7-7 7 7"/><path d="M3 19h18"/></svg>
+                    <div class="dz-help">Click to select or drag & drop file here</div>
+                    <input type="file" id="audioFile" accept="audio/*,video/*" style="display: none;" onchange="document.getElementById('fileName').textContent = this.files[0] ? '✅ Selected: ' + this.files[0].name : '';" />
+                    <div id="fileName" class="file-name"></div>
+                  </div>
+                </div>
+                <div>
+                  <label for="maxWorkers">Performance (Worker Count)</label>
+                  <input class="control" id="maxWorkers" type="number" min="1" max="16" value="6" />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div>
+                  <label for="modelSelect">Model</label>
+                  <select id="modelSelect" class="control">
+                    <option value="Whisper">Whisper</option>
+                    <option value="Malaysia Whisper">Malaysia Whisper</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="languageSelect">Language</label>
+                  <select id="languageSelect" class="control">
+                    <option value="auto">Auto</option>
+                    <option value="ms">Malay</option>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="btn-group" style="margin-top: 24px">
+                <button class="btn btn-primary" id="submitBtn" type="submit">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+                  Transcribe
+                </button>
+                <button class="btn btn-ghost" type="button" id="clearSavedDataBtn">Clear Saved Data</button>
+              </div>
+              <p id="formHelp" style="color:var(--muted); margin:16px 2px 0; font-size: 13px">Files processed on internal server. Data remains confidential.</p>
+            </form>
+
+            <div class="card" style="margin-top: 32px;">
+              <div class="card-hd"><h2>Transcription Results</h2></div>
+              <div class="card-bd">
+                <textarea id="transcription" class="textarea" placeholder="Transcription text will be displayed here..."></textarea>
+                <div class="btn-group" style="margin-top:16px">
+                  <button class="btn btn-outline" id="copyBtn">Copy</button>
+                  <button class="btn btn-ghost" id="downloadDocxBtn">Download DOCX</button>
+                  <button class="btn btn-ghost" id="downloadPdfBtn">Download PDF</button>
+                  <button class="btn btn-ghost" id="downloadTxtBtn">Download TXT</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Processing & preview -->
+          <div>
+            <div class="card">
+              <div class="card-hd">
+                <h2>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>
+                  Process Meeting Minutes
+                </h2>
+              </div>
+              <div class="card-bd">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; margin-bottom: 12px;">
+                  <label for="systemPrompt" style="margin:0">System Instructions</label>
+                  <div class="btn-group">
+                    <select id="systemPromptSelect" class="control" style="padding:8px 10px; width: auto; min-width: 240px"></select>
+                    <button class="btn btn-outline" id="addSystemPromptBtn" title="Add instruction">Add</button>
+                    <button class="btn btn-danger" id="deleteSystemPromptBtn" title="Delete instruction">Delete</button>
+                  </div>
+                </div>
+                <textarea id="systemPrompt" class="textarea" rows="6" placeholder="Enter system instructions here..."></textarea>
+                <div class="btn-group" style="margin-top:16px">
+                  <button class="btn btn-primary" id="processBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 6a12 12 0 0 1-18 0"/></svg>
+                    Process Minutes
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hasil Diproses section -->
+            <div class="card">
+              <div class="card-hd">
+                <h2>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <path d="M14 2v6h6"/>
+                    <path d="M16 13H8"/>
+                    <path d="M16 17H8"/>
+                    <path d="M10 9H8"/>
+                  </svg>
+                  Processed Results
+                </h2>
+              </div>
+              <div class="card-bd">
+                <textarea id="processedTranscription" class="textarea" placeholder="Meeting minutes output will be displayed here..."></textarea>
+                <div class="btn-group" style="margin-top:16px">
+                  <button class="btn btn-outline" id="copyProcessedBtn">Copy</button>
+                  <button class="btn btn-ghost" id="downloadProcessedDocxBtn">Download DOCX</button>
+                  <button class="btn btn-ghost" id="downloadProcessedPdfBtn">Download PDF</button>
+                  <button class="btn btn-ghost" id="downloadProcessedTxtBtn">Download TXT</button>
+                  <button class="btn btn-primary" id="downloadPdrmPdfBtn">Download PDRM PDF Format</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Toast/Status -->
+  <div id="status" class="status" role="status" aria-live="polite" aria-hidden="true">
+    <div class="status-message"></div>
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <div class="progress-text"></div>
+    </div>
+  </div>
+
+  <script>
+    // Constants
+    const LOCAL_STORAGE_KEY = 'transcription_text';
+    const PROCESSED_TRANSCRIPTION_KEY = 'processed_transcription';
+    const METADATA_KEY = 'meeting_metadata';
+    const SYSTEM_PROMPTS_KEY = 'system_prompts';
+    const DEFAULT_SYSTEM_PROMPT = `Convert the following meeting transcript into a well-structured Markdown document using clear headings, subheadings, bullet points, numbered lists, and tables where appropriate. Follow the style of official meeting minutes, including sections such as:
+Meeting title and reference number
+Key metadata (Meeting No., Date, Time, Venue)
+Attendance (divided into present and absent with apologies)
+Agenda items with numbered sections and subsections
+Clear distinction between "Information", "Action", and decisions
+Use blockquotes (>) for descriptive content under each point
+Use bold and headings (#, ##, ###) to organize hierarchy
+Present tabular data using Markdown tables
+Preserve all details without adding or summarizing content
+Do not include any source citations or references unless explicitly tagged
+End with "Prepared by" and "Reviewed by" sections at the bottom
+Ensure the output is clean, professional, and formatted for readability, closely mirroring the structure and tone of formal government or organizational meeting minutes.`;
+
+    // Complete initialization - all in one place
+    window.addEventListener('DOMContentLoaded', () => {
+      // Theme handling
+      const themeToggle = document.getElementById('themeToggle');
+      const savedTheme = localStorage.getItem('theme');
+      if(savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        if(themeToggle) themeToggle.checked = true;
+      }
+      if(themeToggle) {
+        themeToggle.addEventListener('change', () => {
+          const mode = themeToggle.checked ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-theme', mode);
+          localStorage.setItem('theme', mode);
+        });
+      }
+
+      // Get all DOM elements
+      const form = document.getElementById('transcriptionForm');
+      const audioFile = document.getElementById('audioFile');
+      const fileName = document.getElementById('fileName');
+      const transcription = document.getElementById('transcription');
+      const submitBtn = document.getElementById('submitBtn');
+      const statusEl = document.getElementById('status');
+      const processedTranscription = document.getElementById('processedTranscription');
+
+      // Global showStatus function with spinner support
+      window.showStatus = function(message, type, progress = null) {
+        if(!statusEl) return;
+        
+        statusEl.className = `status ${type}`;
+        
+        // Clear existing content
+        statusEl.innerHTML = '';
+        
+        // Add spinner for loading state
+        if (type === 'loading') {
+          const spinner = document.createElement('div');
+          spinner.className = 'spinner';
+          statusEl.appendChild(spinner);
+        }
+        
+        // Add message
+        const messageEl = document.createElement('div');
+        messageEl.textContent = message;
+        statusEl.appendChild(messageEl);
+        
+        statusEl.setAttribute('aria-hidden','false');
+        clearTimeout(window.showStatus._t);
+        
+        // Auto-hide for success/error, keep loading until manually hidden
+        if (type !== 'loading') {
+          window.showStatus._t = setTimeout(()=>{ statusEl.setAttribute('aria-hidden','true'); }, 3800);
+        }
+      };
+
+      // Function to hide status manually
+      window.hideStatus = function() {
+        if(statusEl) statusEl.setAttribute('aria-hidden','true');
+      };
+      
+      // File change handler
+      if(audioFile && fileName) {
+        audioFile.addEventListener('change', function(){
+          if(this.files && this.files[0]) {
+            fileName.textContent = `✅ Selected: ${this.files[0].name}`;
+          } else {
+            fileName.textContent = '';
+          }
+        });
+      }
+      
+      // Form submit with real-time progress tracking
+      if(form && audioFile && transcription && submitBtn) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          if(!audioFile.files || !audioFile.files[0]){
+            showStatus('Please select an audio file first', 'error');
+            return;
+          }
+          
+          submitBtn.disabled = true;
+          showStatus('Transcribing...', 'loading');
+
+          const formData = new FormData();
+          formData.append('file', audioFile.files[0]);
+          formData.append('max_workers', document.getElementById('maxWorkers').value);
+          formData.append('model_name', document.getElementById('modelSelect').value);
+          formData.append('language', document.getElementById('languageSelect').value);
+
+          try {
+            const response = await fetch('/transcribe', { method:'POST', body: formData });
+            const data = await response.json();
+            
+            if(response.ok && data.request_id){
+              // Start SSE connection for progress updates
+              const eventSource = new EventSource(`/progress/${data.request_id}`);
+              
+              eventSource.onmessage = function(event) {
+                try {
+                  const progress = JSON.parse(event.data);
+                  console.log('Progress update:', progress);
+                  
+                  if (progress.completed) {
+                    eventSource.close();
+                    transcription.value = data.transcription;
+                    localStorage.setItem(LOCAL_STORAGE_KEY, data.transcription);
+                    showStatus('Transcription completed successfully!', 'success');
+                    submitBtn.disabled = false;
+                  } else if (progress.error) {
+                    eventSource.close();
+                    showStatus(`Error: ${progress.message}`, 'error');
+                    submitBtn.disabled = false;
+                  } else {
+                    showStatus(progress.message || 'Processing...', 'loading');
+                  }
+                } catch (e) {
+                  console.error('Error parsing progress data:', e);
+                }
+              };
+              
+              eventSource.onerror = function(event) {
+                console.error('SSE error:', event);
+                eventSource.close();
+                submitBtn.disabled = false;
+                showStatus('Connection error during transcription', 'error');
+              };
+              
+            } else {
+              showStatus(`Error: ${data.detail || 'Failed to transcribe'}`, 'error');
+              submitBtn.disabled = false;
+            }
+          } catch(err) {
+            showStatus(`Network error: ${err.message}`, 'error');
+            submitBtn.disabled = false;
+          }
+        });
+      }
+
+      // Process button handler with real-time progress tracking
+      document.getElementById('processBtn')?.addEventListener('click', async () => {
+        if(!transcription.value) {
+          showStatus('No transcription to process', 'error');
+          return;
+        }
+
+        const processBtn = document.getElementById('processBtn');
+        processBtn.disabled = true;
+        showStatus('Processing Minutes...', 'loading');
+        const systemPrompt = document.getElementById('systemPrompt').value;
+
+        try {
+          const res = await fetch('/completion', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: transcription.value }
+            ])
+          });
+
+          const completionData = await res.json();
+          if(res.ok && completionData.request_id) {
+            // Start SSE connection for progress updates
+            const eventSource = new EventSource(`/progress/${completionData.request_id}`);
+            
+            eventSource.onmessage = function(event) {
+              try {
+                const progress = JSON.parse(event.data);
+                console.log('AI Progress update:', progress);
+                
+                if (progress.completed) {
+                  eventSource.close();
+                  processedTranscription.value = completionData.text;
+                  localStorage.setItem(PROCESSED_TRANSCRIPTION_KEY, completionData.text);
+                  updateMarkdownPreview();
+                  updatePreviewTitles();
+                  showStatus('Minutes successfully processed!', 'success');
+                  processBtn.disabled = false;
+                } else if (progress.error) {
+                  eventSource.close();
+                  showStatus(`AI Error: ${progress.message}`, 'error');
+                  processBtn.disabled = false;
+                } else {
+                  showStatus(progress.message || 'Processing with AI...', 'loading');
+                }
+              } catch (e) {
+                console.error('Error parsing AI progress data:', e);
+              }
+            };
+            
+            eventSource.onerror = function(event) {
+              console.error('AI SSE error:', event);
+              eventSource.close();
+              processBtn.disabled = false;
+              showStatus('Connection error during AI processing', 'error');
+            };
+            
+          } else {
+            showStatus(`Error: ${completionData.detail || 'Failed to process minutes'}`, 'error');
+            processBtn.disabled = false;
+          }
+        } catch(err) {
+          showStatus(`Network error: ${err.message}`, 'error');
+          processBtn.disabled = false;
+        }
+      });
+
+      // Load saved data
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if(saved && transcription) { transcription.value = saved; }
+      
+      const savedProcessed = localStorage.getItem(PROCESSED_TRANSCRIPTION_KEY);
+      if(savedProcessed && processedTranscription) {
+        processedTranscription.value = savedProcessed;
+      }
+      
+      updatePreviewTitles();
+      initPrompts();
+      
+      // Copy buttons
+      document.getElementById('copyBtn')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(transcription.value).then(()=>{
+          const btn = document.getElementById('copyBtn');
+          btn.textContent = 'Copied!'; setTimeout(()=> btn.textContent = 'Copy', 1500);
+        }).catch(()=> alert('Failed to copy to clipboard'));
+      });
+
+      document.getElementById('copyProcessedBtn')?.addEventListener('click', () => {
+        const text = processedTranscription ? processedTranscription.value : '';
+        navigator.clipboard.writeText(text).then(() => {
+          const btn = document.getElementById('copyProcessedBtn');
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = 'Copy', 1500);
+        });
+      });
+
+      // Download buttons
+      document.getElementById('downloadDocxBtn')?.addEventListener('click', ()=> downloadTranscription('docx'));
+      document.getElementById('downloadPdfBtn')?.addEventListener('click', ()=> downloadTranscription('pdf'));
+      document.getElementById('downloadTxtBtn')?.addEventListener('click', ()=> downloadTranscription('txt'));
+      document.getElementById('downloadProcessedDocxBtn')?.addEventListener('click', () => downloadProcessedTranscription('docx'));
+      document.getElementById('downloadProcessedPdfBtn')?.addEventListener('click', () => downloadProcessedTranscription('pdf'));
+      document.getElementById('downloadProcessedTxtBtn')?.addEventListener('click', () => downloadProcessedTranscription('txt'));
+      document.getElementById('downloadPdrmPdfBtn')?.addEventListener('click', downloadPdrmMinutes);
+
+      // System prompt handlers
+      document.getElementById('addSystemPromptBtn')?.addEventListener('click', () => {
+        const name = prompt('Name for new system instruction:');
+        if(!name || !name.trim()) return;
+        const saved = JSON.parse(localStorage.getItem(SYSTEM_PROMPTS_KEY) || '[]');
+        const newPrompt = { id: 'prompt_' + Date.now(), name: name.trim(), content: document.getElementById('systemPrompt')?.value || '' };
+        saved.push(newPrompt); localStorage.setItem(SYSTEM_PROMPTS_KEY, JSON.stringify(saved));
+        populateSystemPromptDropdown(saved);
+        const selectEl = document.getElementById('systemPromptSelect');
+        if(selectEl) selectEl.value = newPrompt.id;
+        showStatus('System instruction added', 'success');
+      });
+
+      document.getElementById('deleteSystemPromptBtn')?.addEventListener('click', () => {
+        const sel = document.getElementById('systemPromptSelect');
+        const id = sel?.value; if(!id){ showStatus('Please select an instruction to delete', 'error'); return; }
+        if(id === 'default'){ showStatus('Default instruction cannot be deleted', 'error'); return; }
+        if(confirm('Delete this instruction?')){
+          const saved = JSON.parse(localStorage.getItem(SYSTEM_PROMPTS_KEY) || '[]').filter(p => p.id !== id);
+          if(saved.length === 0){ saved.push({ id:'default', name:'Default Meeting Minutes', content: DEFAULT_SYSTEM_PROMPT }); }
+          localStorage.setItem(SYSTEM_PROMPTS_KEY, JSON.stringify(saved));
+          populateSystemPromptDropdown(saved);
+          const systemPromptEl = document.getElementById('systemPrompt');
+          const systemPromptSelectEl = document.getElementById('systemPromptSelect');
+          if(systemPromptEl) systemPromptEl.value = saved[0].content;
+          if(systemPromptSelectEl) systemPromptSelectEl.value = saved[0].id;
+          showStatus('Instruction deleted', 'success');
+        }
+      });
+
+      document.getElementById('clearSavedDataBtn')?.addEventListener('click', () => {
+        if(confirm('Delete all saved data (transcriptions, system instructions, processed results, meeting information)?')){
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          localStorage.removeItem('system_prompts');
+          localStorage.removeItem('processed_transcription');
+          localStorage.removeItem(METADATA_KEY);
+          if(transcription) transcription.value = '';
+          if(processedTranscription) processedTranscription.value = '';
+          initPrompts();
+          updateMarkdownPreview();
+          showStatus('Data simpanan dibersihkan', 'success');
+        }
+      });
+
+      // Auto-save handlers
+      if (transcription) {
+        transcription.addEventListener('input', () => localStorage.setItem(LOCAL_STORAGE_KEY, transcription.value));
+      }
+      if (processedTranscription) {
+        processedTranscription.addEventListener('input', () => {
+          localStorage.setItem(PROCESSED_TRANSCRIPTION_KEY, processedTranscription.value);
+          updateMarkdownPreview();
+          updatePreviewTitles();
+        });
+      }
+    });
+
+
+    // Downloads (raw)
+    async function downloadTranscription(format){
+      const transcription = document.getElementById('transcription');
+      if(!transcription || !transcription.value){ showStatus('No transcription to download', 'error'); return; }
+      try{
+        showStatus(`Generating ${format.toUpperCase()} file…`, 'loading');
+        const fd = new FormData();
+        
+        // Custom renderer for PDRM template structure
+        const renderer = new marked.Renderer();
+        
+        // Track section state
+        let inSection = false;
+        
+        // Keep headings normal
+        renderer.heading = function(text, level) {
+          return `<h${level}>${text}</h${level}>`;
+        };
+
+        // Convert list items to grid items with tags
+        renderer.listitem = function(text) {
+          // Ensure text is a string and remove HTML tags for processing
+          const textStr = String(text || '').replace(/<[^>]*>/g, '').trim();
+          
+          // Extract tag pattern like "Tindakan: RFI" or "Makluman" at end
+          const tagMatch = textStr.match(/\b(Tindakan:\s*[^.]*|Makluman|Information|Action:\s*[^.]*)$/i);
+          const tag = tagMatch ? tagMatch[1].trim() : '';
+          const content = tagMatch ? textStr.replace(tagMatch[0], '').trim() : textStr;
+          
+          // Extract numbering
+          const numMatch = content.match(/^(\d+(?:\.\d+)*)\.\s*(.*)$/);
+          const num = numMatch ? numMatch[1] + '.' : '';
+          const mainContent = numMatch ? numMatch[2] : content;
+
+          return `<li><strong>${num}</strong> ${mainContent} <em>[${tag}]</em></li>`;
+        };
+
+        // Extract title for this download
+        const downloadTitle = extractTitleFromContent(transcription.value) || 'MINIT MESYUARAT';
+        
+        // Create simple HTML without custom grid structure
+        const template = `
+          <div class="header">
+            <img src="asset/logo.png" class="logo" />
+            <div class="title">
+              <h1>${downloadTitle}</h1>
+            </div>
+          </div>
+
+          <table class="meta">
+            <tr><td>Meeting No.</td><td>: </td></tr>
+            <tr><td>Date</td><td>: </td></tr>
+            <tr><td>Time</td><td>: </td></tr>
+            <tr><td>Venue</td><td>: </td></tr>
+          </table>
+
+          ${marked.parse(transcription.value, { renderer })}
+        `;
+
+        fd.append('text', template);
+        fd.append('template', 'pdrm');
+        fd.append('title', downloadTitle);
+        
+        const url = new URL('/process_text', window.location.origin);
+        url.searchParams.append('output_format', format);
+        url.searchParams.append('template', 'pdrm');
+        
+        const res = await fetch(url, { method:'POST', body: fd });
+        const data = await res.json();
+        if(res.ok){
+          const link = document.createElement('a');
+          link.href = data[`${format}_url`];
+          link.download = `minit.${format}`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          showStatus(`${format.toUpperCase()} ready for download`, 'success');
+        } else {
+          showStatus(`Error: ${data.detail || 'Failed to generate file'}`, 'error');
+        }
+      }catch(err){
+        showStatus(`Network error: ${err.message}`, 'error');
+      }
+    }
+    // Clean separation - removed duplicate code
+
+    async function downloadProcessedTranscription(format){
+      const processedTranscription = document.getElementById('processedTranscription');
+      if(!processedTranscription || !processedTranscription.value){ showStatus('No processed results to download', 'error'); return; }
+      try{
+        showStatus(`Generating ${format.toUpperCase()} file…`, 'loading');
+        const fd = new FormData();
+        
+        // Custom renderer for PDRM template structure
+        const renderer = new marked.Renderer();
+        
+        // Track section state
+        let inSection = false;
+        
+        // Handle sections and items with tags
+        renderer.heading = (text, level) => {
+          let output = '';
+          if (inSection) {
+            output += '</div></div>'; // Close previous section
+          }
+          if (level === 2) {
+            inSection = true;
+            output += `<div class="section"><h2>${text}</h2><div class="items">`;
+          } else {
+            inSection = false;
+            output += `<h${level}>${text}</h${level}>`;
+          }
+          return output;
+        };
+
+        // Convert list items to grid items with tags
+        renderer.listitem = function(text) {
+          // Ensure text is a string and remove HTML tags for processing
+          const textStr = String(text || '').replace(/<[^>]*>/g, '').trim();
+          
+          // Extract tag pattern like "Tindakan: RFI" or "Makluman" at end
+          const tagMatch = textStr.match(/\b(Tindakan:\s*[^.]*|Makluman|Information|Action:\s*[^.]*)$/i);
+          const tag = tagMatch ? tagMatch[1].trim() : '';
+          const content = tagMatch ? textStr.replace(tagMatch[0], '').trim() : textStr;
+          
+          // Extract numbering
+          const numMatch = content.match(/^(\d+(?:\.\d+)*)\.\s*(.*)$/);
+          const num = numMatch ? numMatch[1] + '.' : '';
+          const mainContent = numMatch ? numMatch[2] : content;
+
+          return `<li><strong>${num}</strong> ${mainContent} <em>[${tag}]</em></li>`;
+        };
+
+        // Extract title for this download
+        const downloadTitle = extractTitleFromContent(processedTranscription.value) || 'MINIT MESYUARAT';
+        
+        // Create template HTML
+        const template = `
+          <div class="header">
+            <img src="asset/logo.png" class="logo" />
+            <div class="title">
+              <h1>${downloadTitle}</h1>
+            </div>
+          </div>
+
+          <table class="meta">
+            <tr><td>Meeting No.</td><td>: </td></tr>
+            <tr><td>Date</td><td>: </td></tr>
+            <tr><td>Time</td><td>: </td></tr>
+            <tr><td>Venue</td><td>: </td></tr>
+          </table>
+
+          ${marked.parse(processedTranscription.value, { renderer })}
+        `;
+
+        fd.append('text', template);
+        fd.append('template', 'pdrm');
+        fd.append('title', downloadTitle);
+        
+        const url = new URL('/process_text', window.location.origin);
+        url.searchParams.append('output_format', format);
+        url.searchParams.append('template', 'pdrm');
+        
+        const res = await fetch(url, { method:'POST', body: fd });
+        const data = await res.json();
+        if(res.ok){
+          const link = document.createElement('a');
+          link.href = data[`${format}_url`];
+          link.download = `minit-diproses.${format}`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          showStatus(`${format.toUpperCase()} ready for download`, 'success');
+        } else {
+          showStatus(`Error: ${data.detail || 'Failed to generate file'}`, 'error');
+        }
+      }catch(err){
+        showStatus(`Network error: ${err.message}`, 'error');
+      }
+    }
+
+    // Markdown preview
+    function updateMarkdownPreview(){
+      const processedTranscription = document.getElementById('processedTranscription');
+      const markdownPreview = document.getElementById('markdownPreview');
+      const processedText = (localStorage.getItem(PROCESSED_TRANSCRIPTION_KEY) || (processedTranscription ? processedTranscription.value : '') || '').trim();
+      
+      if(!processedText) {
+        if(markdownPreview) markdownPreview.textContent = 'Markdown preview will be displayed here…';
+        return;
+      }
+
+      // Custom renderer for PDRM template structure
+      const renderer = new marked.Renderer();
+      
+      // Track section state
+      let inSection = false;
+      
+      // Handle sections and items with tags
+      renderer.heading = (text, level) => {
+        let output = '';
+        if (inSection) {
+          output += '</div></div>'; // Close previous section
+        }
+        if (level === 2) {
+          inSection = true;
+          output += `<div class="section"><h2>${text}</h2><div class="items">`;
+        } else {
+          inSection = false;
+          output += `<h${level}>${text}</h${level}>`;
+        }
+        return output;
+      };
+
+      // Convert list items to normal HTML
+      renderer.listitem = function(text) {
+        return `<li>${text}</li>`;
+      };
+
+      // Keep headings normal
+      renderer.heading = function(text, level) {
+        return `<h${level}>${text}</h${level}>`;
+      };
+
+      // Extract title for preview
+      const previewTitle = extractTitleFromContent(processedText) || 'MINIT MESYUARAT';
+      
+      // Create template HTML
+      const template = `
+        <div class="header">
+          <img src="asset/logo.png" class="logo" />
+          <div class="title">
+            <h1 id="preview-title-3">${previewTitle}</h1>
+          </div>
+        </div>
+
+        <table class="meta">
+          <tr><td>Meeting No.</td><td>: </td></tr>
+          <tr><td>Date</td><td>: </td></tr>
+          <tr><td>Time</td><td>: </td></tr>
+          <tr><td>Venue</td><td>: </td></tr>
+        </table>
+
+        <!-- Processed markdown content -->
+        ${marked.parse(processedText, { renderer })}${inSection ? '</div></div>' : ''}
+      `;
+      
+      if(markdownPreview) {
+        markdownPreview.innerHTML = template;
+      }
+    }
+
+    // Extract title from AI-processed content
+    function extractTitleFromContent(content) {
+      if (!content) return null;
+      
+      // Look for MINIT MESYUARAT followed by descriptive text
+      const titleMatch = content.match(/^#?\s*MINIT MESYUARAT\s+(.+?)$/m);
+      if (titleMatch && titleMatch[1]) {
+        return `MINIT MESYUARAT ${titleMatch[1].trim()}`;
+      }
+      
+      // Look for any H1 content that might be a title
+      const h1Match = content.match(/^#\s*(.+?)$/m);
+      if (h1Match && h1Match[1] && !h1Match[1].includes('KEHADIRAN') && !h1Match[1].includes('AGENDA')) {
+        return h1Match[1].trim();
+      }
+      
+      return null;
+    }
+
+    // Update preview title for markdown preview only (placeholder function)
+    function updatePreviewTitles() {
+      // Function kept for compatibility but no longer updates anything
+      // since markdown preview has been removed
+    }
+
+    // System prompts management (localStorage)
+
+    function initPrompts(){
+      const systemPromptSelect = document.getElementById('systemPromptSelect');
+      let savedPrompts = [];
+      try{ savedPrompts = JSON.parse(localStorage.getItem(SYSTEM_PROMPTS_KEY) || '[]'); }catch{ savedPrompts = []; }
+      if(savedPrompts.length === 0){ savedPrompts.push({ id:'default', name:'Default Meeting Minutes', content: DEFAULT_SYSTEM_PROMPT }); localStorage.setItem(SYSTEM_PROMPTS_KEY, JSON.stringify(savedPrompts)); }
+      populateSystemPromptDropdown(savedPrompts);
+      const systemPromptEl = document.getElementById('systemPrompt');
+      const systemPromptSelectEl = document.getElementById('systemPromptSelect');
+      if(systemPromptEl) systemPromptEl.value = savedPrompts[0].content;
+      if(systemPromptSelectEl) systemPromptSelectEl.value = savedPrompts[0].id;
+    }
+
+    function populateSystemPromptDropdown(prompts){
+      const sel = document.getElementById('systemPromptSelect');
+      if (!sel) return;
+      sel.innerHTML = '';
+      for(const p of prompts) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+      }
+    }
+
+
+    // PDRM PDF Download Function - Now fully automatic from AI content
+    async function downloadPdrmMinutes() {
+      const processedTranscription = document.getElementById('processedTranscription');
+      const processed = processedTranscription ? processedTranscription.value : '';
+      
+      if (!processed.trim()) {
+        showStatus('No processed transcription to download', 'error');
+        return;
+      }
+
+      try {
+        showStatus('Generating PDRM format PDF...', 'loading');
+        const fd = new FormData();
+        fd.append('text', processed); // AI content contains all metadata
+        fd.append('footer_text', '');
+        fd.append('logo_path', 'static/asset/logo.png');
+
+        const res = await fetch('/minutes/render?output_format=pdf', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Render failed');
+
+        const link = document.createElement('a');
+        link.href = data.pdf_url;
+        link.download = 'Meeting Minutes (PDRM).pdf';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        showStatus('PDRM format PDF successfully generated!', 'success');
+      } catch (err) {
+        showStatus(`Error: ${err.message}`, 'error');
+      }
+    }
+  </script>
+</body>
+</html>

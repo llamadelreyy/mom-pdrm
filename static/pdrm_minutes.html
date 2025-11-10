@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title_text }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 2cm 2.2cm 2.2cm 2.2cm;
+      @bottom-center {
+        content: string(footer);
+        font-size: 10pt;
+        color: #555;
+      }
+    }
+
+    /* Font: ARIAL everywhere */
+    * {
+      box-sizing: border-box;
+      font-family: Arial, sans-serif !important;
+    }
+    html, body {
+      font-family: Arial, sans-serif !important;
+      color:#000;
+    }
+
+    /* Headings spec */
+    h1, h2, h3 {
+      margin: 0 0 8px 0;
+      font-family: Arial, sans-serif !important;
+    }
+    h1 {
+      font-size: 12pt; font-weight: 700; text-transform: uppercase;
+      text-decoration: underline;
+      font-family: Arial, sans-serif !important;
+    }
+    h2 {
+      font-size: 12pt; font-weight: 700;
+      font-family: Arial, sans-serif !important;
+    }
+    h3 {
+      font-size: 11pt; font-weight: 700;
+      font-family: Arial, sans-serif !important;
+    }
+
+    .header { text-align:center; margin-bottom: 12px; }
+    .logo { height: 120px; display:block; margin: 0 auto 8px auto; }
+
+    /* Title shown as H1 for style compliance */
+    .title { margin-top: 6px; }
+    .title h1 { display: inline-block; }
+
+    .ref { margin-top:6px; font-weight:700; font-size: 11pt; }
+
+    .meta {
+      margin-top:12px; font-size: 11pt;
+      border-collapse:collapse; width:100%;
+      font-family: Arial, sans-serif !important;
+    }
+    .meta td {
+      padding: 3px 0; vertical-align:top;
+      font-family: Arial, sans-serif !important;
+    }
+    .meta td:first-child {
+      width: 130px; font-weight:700;
+      font-family: Arial, sans-serif !important;
+    }
+
+    .section {
+      margin-top: 12px;
+      font-family: Arial, sans-serif !important;
+    }
+
+    /* Grid for items + tags (Makluman/Tindakan) */
+    .items {
+      margin-top: 4px;
+      font-family: Arial, sans-serif !important;
+    }
+    .item {
+      display:grid;
+      grid-template-columns: 28px auto 120px; /* no., text, tag */
+      column-gap: 10px;
+      align-items:start;
+      margin: 2px 0;
+      font-size: 11pt;
+      font-family: Arial, sans-serif !important;
+    }
+    .item .no {
+      font-weight:700;
+      font-family: Arial, sans-serif !important;
+    }
+    .item .text {
+      line-height:1.4;
+      font-family: Arial, sans-serif !important;
+    }
+    .item .tag {
+      text-align:right; font-weight:700; white-space:nowrap;
+      font-family: Arial, sans-serif !important;
+    }
+
+    /* sub-level indent */
+    .item.sub1 { margin-left: 18px; }
+    .item.sub2 { margin-left: 36px; }
+    .item.sub3 { margin-left: 54px; }
+
+    .text p {
+      margin: 0 0 5px 0; text-align: justify;
+      font-family: Arial, sans-serif !important;
+    }
+    .text ul, .text ol {
+      margin: 0 0 6px 18px;
+      font-family: Arial, sans-serif !important;
+    }
+
+    /* Markdown table styling */
+    table.md {
+      border-collapse: collapse; width:100%; margin: 8px 0;
+      font-size: 11pt;
+      font-family: Arial, sans-serif !important;
+    }
+    table.md th, table.md td {
+      border: 1px solid #777; padding: 6px;
+      font-family: Arial, sans-serif !important;
+    }
+    table.md th {
+      font-weight:700;
+      font-family: Arial, sans-serif !important;
+    }
+
+    #footer { string-set: footer content(attr(data-footer)); }
+  </style>
+</head>
+<body>
+  <div id="footer" data-footer="{{ footer_text }}"></div>
+  
+  <div class="header">
+    {% if logo_src %}
+      <img src="{{ logo_src }}" class="logo" />
+    {% endif %}
+
+    <div class="title">
+      <!-- Title rendered as H1 to apply the exact style rules -->
+      <h1>{{ title_text|upper }}</h1>
+    </div>
+
+    {% if rujukan %}
+      <div class="ref">Rujukan: {{ rujukan }}</div>
+    {% endif %}
+  </div>
+
+  <table class="meta">
+    {% if bil %}<tr><td>Bil. Mesyuarat</td><td>: {{ bil }}</td></tr>{% endif %}
+    {% if tarikh %}<tr><td>Tarikh</td><td>: {{ tarikh }}</td></tr>{% endif %}
+    {% if masa %}<tr><td>Masa</td><td>: {{ masa }}</td></tr>{% endif %}
+    {% if tempat %}<tr><td>Tempat</td><td>: {{ tempat }}</td></tr>{% endif %}
+  </table>
+
+  {{ body_html|safe }}
+</body>
+</html>

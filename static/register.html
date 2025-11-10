@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDRM Minutes of Meeting Assistant – Register</title>
+  <meta name="color-scheme" content="light dark" />
+  <style>
+    :root {
+      --bg: #f7f9fc;
+      --card: #ffffff;
+      --text: #0a1733;
+      --muted: #667085;
+      --primary: #1f4788;
+      --primary-2: #0e2a55;
+      --accent: #d4af37;
+      --error-bg: #fde8ea;
+      --error-text: #7f1d1d;
+      --success-bg: #d1fae5;
+      --success-text: #065f46;
+      --border: #e6e9f0;
+      --shadow: 0 10px 30px rgba(10, 23, 51, 0.16);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1220;
+        --card: #0e1628cc;
+        --text: #ecf2ff;
+        --muted: #b6c2d9;
+        --primary: #7aa2ff;
+        --primary-2: #4361ee;
+        --accent: #f2cc69;
+        --error-bg: #3b0d0d;
+        --error-text: #fecaca;
+        --success-bg: #064e3b;
+        --success-text: #6ee7b7;
+        --border: #1d2a44;
+        --shadow: 0 10px 30px rgba(0,0,0,.45);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 80% -10%, rgba(31,71,136,.08), transparent),
+                  radial-gradient(1000px 700px at -10% 120%, rgba(212,175,55,.10), transparent),
+                  var(--bg);
+      overflow-x: hidden;
+      padding: 20px 0;
+    }
+
+    .bg-shapes::before,
+    .bg-shapes::after {
+      content: "";
+      position: fixed;
+      inset: auto auto -120px -120px;
+      width: 360px; height: 360px;
+      background: radial-gradient(closest-side, rgba(212,175,55,.25), transparent 70%);
+      filter: blur(12px);
+      transform: rotate(15deg);
+      z-index: 0;
+      animation: float 16s ease-in-out infinite;
+    }
+    .bg-shapes::after {
+      inset: -140px -120px auto auto;
+      width: 460px; height: 460px;
+      background: radial-gradient(closest-side, rgba(31,71,136,.25), transparent 70%);
+      animation-duration: 22s;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0) rotate(12deg); }
+      50% { transform: translateY(10px) rotate(18deg); }
+    }
+
+    .register-card {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 32px 28px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .brand {
+      display: grid;
+      place-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .brand .logo {
+      width: 84px; height: 84px;
+      border-radius: 12px;
+      object-fit: contain;
+      display: block;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,.12));
+    }
+    h1.title {
+      margin: 4px 0 0;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: .2px;
+      text-align: center;
+    }
+    p.subtitle {
+      margin: 6px 0 0;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .alert {
+      margin: 18px 0 0;
+      padding: 12px 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      display: none;
+    }
+    .alert.error {
+      border: 1px solid rgba(127,29,29,.15);
+      background: var(--error-bg);
+      color: var(--error-text);
+    }
+    .alert.success {
+      border: 1px solid rgba(6,95,70,.15);
+      background: var(--success-bg);
+      color: var(--success-text);
+    }
+
+    form { margin-top: 18px; }
+    .field {
+      margin: 14px 0 0;
+    }
+    .field:first-child {
+      margin-top: 0;
+    }
+    .label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    label { font-weight: 700; font-size: 13px; color: var(--text); }
+    .input {
+      --h: 44px;
+      position: relative;
+      display: grid;
+      grid-template-columns: 36px 1fr 36px;
+      align-items: center;
+      height: var(--h);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      overflow: hidden;
+    }
+    @media (prefers-color-scheme: dark){
+      .input { background: rgba(255,255,255,.04); }
+    }
+    .input:focus-within { box-shadow: 0 0 0 3px rgba(31,71,136,.15); border-color: #b3c7ea; }
+    .input.error { border-color: #ef4444; }
+
+    .input svg { width: 18px; height: 18px; opacity: .7; }
+    .input .icon { display: grid; place-items: center; }
+    .input input {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      outline: 0;
+      font-size: 15px;
+      padding: 0 8px;
+      background: transparent;
+      color: var(--text);
+    }
+    .toggle {
+      cursor: pointer;
+      appearance: none;
+      background: transparent;
+      border: 0;
+      display: grid;
+      place-items: center;
+      height: 100%; width: 100%;
+    }
+
+    .field-error {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--error-text);
+      display: none;
+    }
+
+    .row {
+      margin-top: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+    }
+    .row a { color: var(--primary); text-decoration: none; font-size: 13px; }
+    .row a:hover { text-decoration: underline; }
+
+    .btn {
+      margin-top: 16px;
+      width: 100%;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      gap: 10px;
+      height: 46px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: #fff;
+      border: 0;
+      border-radius: 12px;
+      font-weight: 700;
+      letter-spacing: .2px;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(31,71,136,.25);
+      transition: transform .08s ease, filter .15s ease;
+    }
+    .btn:hover { filter: brightness(1.03); }
+    .btn:active { transform: translateY(1px); }
+    .btn[disabled] { opacity: .7; cursor: not-allowed; filter: saturate(.6); }
+
+    .hint {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    footer.note {
+      margin-top: 18px; text-align: center; font-size: 12px; color: var(--muted);
+    }
+
+    .login-link {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .login-link a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .login-link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-shapes" aria-hidden="true"></div>
+
+  <main class="register-card" role="main" aria-labelledby="title">
+    <div class="brand">
+      <img src="../static/asset/logo.png" alt="PDRM logo" class="logo" />
+      <h1 id="title" class="title">PDRM Minutes of Meeting Assistant</h1>
+      <p class="subtitle">Daftar akaun baharu</p>
+    </div>
+
+    <div id="alert" class="alert" role="alert" aria-live="polite"></div>
+
+    <form id="registerForm" novalidate onsubmit="return handleSubmit(event)">
+      <div class="field">
+        <div class="label-row">
+          <label for="full_name">Full Name</label>
+        </div>
+        <div class="input">
+          <span class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C13.1 2 14 2.9 14 4C14 5.1 13.1 6 12 6C10.9 6 10 5.1 10 4C10 2.9 10.9 2 12 2ZM21 9V7L15 1L9 7V9C9 10.1 9.9 11 11 11V17C11 18.1 11.9 19 13 19H15C16.1 19 17 18.1 17 17V11C18.1 11 19 10.1 19 9Z"/></svg>
+          </span>
+          <input type="text" id="full_name" name="full_name" required placeholder="Your full name" />
+          <span></span>
+        </div>
+        <div class="field-error" id="full_name_error"></div>
+      </div>
+
+      <div class="field">
+        <div class="label-row">
+          <label for="username">Username</label>
+        </div>
+        <div class="input">
+          <span class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-4.418 0-8 2.239-8 5v1h16v-1c0-2.761-3.582-5-8-5z"/></svg>
+          </span>
+          <input type="text" id="username" name="username" required autocomplete="username" placeholder="Choose a username" />
+          <span></span>
+        </div>
+        <div class="field-error" id="username_error"></div>
+      </div>
+
+      <div class="field">
+        <div class="label-row">
+          <label for="email">Email</label>
+        </div>
+        <div class="input">
+          <span class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.89 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+          </span>
+          <input type="email" id="email" name="email" required autocomplete="email" placeholder="your.email@example.com" />
+          <span></span>
+        </div>
+        <div class="field-error" id="email_error"></div>
+      </div>
+
+      <div class="field">
+        <div class="label-row">
+          <label for="password">Password</label>
+        </div>
+        <div class="input">
+          <span class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 9V7a5 5 0 10-10 0v2H5v12h14V9h-2zm-8 0V7a3 3 0 116 0v2H9zm3 5a2 2 0 100-4 2 2 0 000 4z"/></svg>
+          </span>
+          <input type="password" id="password" name="password" required placeholder="••••••••" />
+          <button type="button" class="toggle" aria-label="Show password" title="Show password" onclick="togglePw('password')">
+            <svg id="eye1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5c-7 0-11 7-11 7s4 7 11 7 11-7 11-7-4-7-11-7zm0 12a5 5 0 110-10 5 5 0 010 10z"/></svg>
+          </button>
+        </div>
+        <div class="field-error" id="password_error"></div>
+      </div>
+
+      <div class="field">
+        <div class="label-row">
+          <label for="confirm_password">Confirm Password</label>
+        </div>
+        <div class="input">
+          <span class="icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17 9V7a5 5 0 10-10 0v2H5v12h14V9h-2zm-8 0V7a3 3 0 116 0v2H9zm3 5a2 2 0 100-4 2 2 0 000 4z"/></svg>
+          </span>
+          <input type="password" id="confirm_password" name="confirm_password" required placeholder="••••••••" />
+          <button type="button" class="toggle" aria-label="Show password" title="Show password" onclick="togglePw('confirm_password')">
+            <svg id="eye2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5c-7 0-11 7-11 7s4 7 11 7 11-7 11-7-4-7-11-7zm0 12a5 5 0 110-10 5 5 0 010 10z"/></svg>
+          </button>
+        </div>
+        <div class="field-error" id="confirm_password_error"></div>
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn">
+        <span id="btnText">Register</span>
+        <svg id="spinner" style="display:none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 2a1 1 0 011 1v2a1 1 0 11-2 0V3a1 1 0 011-1zm6.364 3.636a1 1 0 010 1.414l-1.414 1.414a1 1 0 01-1.415-1.414l1.415-1.414a1 1 0 011.414 0zM21 11a1 1 0 110 2h-2a1 1 0 110-2h2zM6.05 6.05a1 1 0 011.415 0L8.88 7.465A1 1 0 117.465 8.88L6.05 7.465a1 1 0 010-1.415zM5 11a1 1 0 110 2H3a1 1 0 110-2h2zm11.95 6.95a1 1 0 00-1.415 0l-1.414 1.414a1 1 0 101.414 1.415l1.414-1.415a1 1 0 000-1.414zM13 19a1 1 0 10-2 0v2a1 1 0 102 0v-2zM6.05 17.95a1 1 0 10-1.414 1.415l1.414 1.414A1 1 0 007.465 19.364L6.05 17.95z"/></svg>
+      </button>
+
+      <p class="hint">All fields are required. Password must be at least 8 characters with uppercase and numbers.</p>
+
+      <div class="login-link">
+        Already have an account? <a href="/login">Sign in here</a>
+      </div>
+
+      <footer class="note">© <span id="year"></span> Polis Diraja Malaysia</footer>
+    </form>
+  </main>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    function togglePw(fieldId) {
+      const input = document.getElementById(fieldId);
+      const eyeId = fieldId === 'password' ? 'eye1' : 'eye2';
+      const eye = document.getElementById(eyeId);
+      const isPwd = input.getAttribute('type') === 'password';
+      input.setAttribute('type', isPwd ? 'text' : 'password');
+      eye.innerHTML = isPwd
+        ? '<path d="M12 5c-7 0-11 7-11 7s4 7 11 7c2.3 0 4.31-.72 6.02-1.86l1.41 1.41 1.41-1.41-1.38-1.38C21.49 14.99 23 12 23 12s-4-7-11-7zm0 4a3 3 0 012.83 4.01l-3.84-3.84A2.98 2.98 0 0112 9zm0 8a5 5 0 01-5-5c0-.52.08-1.02.23-1.49l7.26 7.26A4.97 4.97 0 0112 17z"/>'
+        : '<path d="M12 5c-7 0-11 7-11 7s4 7 11 7 11-7 11-7-4-7-11-7zm0 12a5 5 0 110-10 5 5 0 010 10z"/>';
+    }
+
+    function showAlert(message, type = 'error') {
+      const alert = document.getElementById('alert');
+      alert.textContent = message;
+      alert.className = `alert ${type}`;
+      alert.style.display = 'block';
+      
+      if (type === 'success') {
+        setTimeout(() => {
+          alert.style.display = 'none';
+        }, 3000);
+      }
+    }
+
+    function hideAlert() {
+      const alert = document.getElementById('alert');
+      alert.style.display = 'none';
+    }
+
+    function showFieldError(fieldId, message) {
+      const errorElement = document.getElementById(fieldId + '_error');
+      const inputElement = document.getElementById(fieldId).parentElement;
+      
+      if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+      }
+      if (inputElement) {
+        inputElement.classList.add('error');
+      }
+    }
+
+    function clearFieldErrors() {
+      const errorElements = document.querySelectorAll('.field-error');
+      const inputElements = document.querySelectorAll('.input');
+      
+      errorElements.forEach(el => {
+        el.style.display = 'none';
+        el.textContent = '';
+      });
+      
+      inputElements.forEach(el => {
+        el.classList.remove('error');
+      });
+    }
+
+    function validateForm() {
+      clearFieldErrors();
+      hideAlert();
+      
+      const form = document.getElementById('registerForm');
+      const formData = new FormData(form);
+      let isValid = true;
+      
+      // Full name validation
+      const fullName = formData.get('full_name')?.trim();
+      if (!fullName) {
+        showFieldError('full_name', 'Full name is required');
+        isValid = false;
+      } else if (fullName.length < 2) {
+        showFieldError('full_name', 'Full name must be at least 2 characters');
+        isValid = false;
+      }
+      
+      // Username validation
+      const username = formData.get('username')?.trim();
+      if (!username) {
+        showFieldError('username', 'Username is required');
+        isValid = false;
+      } else if (username.length < 3) {
+        showFieldError('username', 'Username must be at least 3 characters');
+        isValid = false;
+      } else if (!/^[a-zA-Z0-9_.@]+$/.test(username)) {
+        showFieldError('username', 'Username can only contain letters, numbers, underscore, dot, or @ symbol');
+        isValid = false;
+      }
+      
+      // Email validation
+      const email = formData.get('email')?.trim();
+      if (!email) {
+        showFieldError('email', 'Email is required');
+        isValid = false;
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFieldError('email', 'Please enter a valid email address');
+        isValid = false;
+      }
+      
+      // Password validation
+      const password = formData.get('password');
+      if (!password) {
+        showFieldError('password', 'Password is required');
+        isValid = false;
+      } else if (password.length < 8) {
+        showFieldError('password', 'Password must be at least 8 characters');
+        isValid = false;
+      } else if (!/(?=.*[A-Z])/.test(password)) {
+        showFieldError('password', 'Password must contain at least one uppercase letter');
+        isValid = false;
+      } else if (!/(?=.*\d)/.test(password)) {
+        showFieldError('password', 'Password must contain at least one number');
+        isValid = false;
+      }
+      
+      // Confirm password validation
+      const confirmPassword = formData.get('confirm_password');
+      if (!confirmPassword) {
+        showFieldError('confirm_password', 'Please confirm your password');
+        isValid = false;
+      } else if (confirmPassword !== password) {
+        showFieldError('confirm_password', 'Passwords do not match');
+        isValid = false;
+      }
+      
+      return isValid;
+    }
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      
+      if (!validateForm()) {
+        return false;
+      }
+      
+      const form = e.target;
+      const btn = document.getElementById('submitBtn');
+      const spinner = document.getElementById('spinner');
+      const text = document.getElementById('btnText');
+      
+      // Show loading state
+      btn.setAttribute('disabled', 'true');
+      spinner.style.display = 'inline-block';
+      text.textContent = 'Creating account…';
+      
+      try {
+        const formData = new FormData(form);
+        
+        const response = await fetch('/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: formData.get('username'),
+            email: formData.get('email'),
+            password: formData.get('password'),
+            confirm_password: formData.get('confirm_password'),
+            full_name: formData.get('full_name')
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+          showAlert('Account created successfully! Redirecting to login...', 'success');
+          
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 2000);
+        } else {
+          if (result.detail && Array.isArray(result.detail)) {
+            // Handle validation errors
+            result.detail.forEach(error => {
+              const field = error.loc?.[error.loc.length - 1];
+              if (field) {
+                showFieldError(field, error.msg);
+              }
+            });
+          } else {
+            showAlert(result.detail || 'Registration failed. Please try again.');
+          }
+        }
+      } catch (error) {
+        showAlert('Network error. Please check your connection and try again.');
+      } finally {
+        // Reset button state
+        btn.removeAttribute('disabled');
+        spinner.style.display = 'none';
+        text.textContent = 'Register';
+      }
+      
+      return false;
+    }
+  </script>
+</body>
+</html>

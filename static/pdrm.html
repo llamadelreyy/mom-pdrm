@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+  @page {
+    size: A4;
+    margin: 2cm 2.2cm 2.2cm 2.2cm;
+    @bottom-center {
+      content: string(footer);
+      font-size: 10pt;
+      color: #555;
+    }
+  }
+
+  /* Font: ARIAL everywhere */
+  * { box-sizing: border-box; }
+  html, body { font-family: Arial, sans-serif; color:#000; }
+
+  /* Headings spec */
+  h1, h2, h3 { margin: 0 0 8px 0; }
+  h1 {
+    font-size: 12pt; font-weight: 700; text-transform: uppercase;
+    text-decoration: underline;
+  }
+  h2 { font-size: 12pt; font-weight: 700; }
+  h3 { font-size: 11pt; font-weight: 700; }
+
+  .header { text-align:center; margin-bottom: 12px; }
+  .logo { height: 70px; display:block; margin: 0 auto 8px auto; }
+
+  /* Title shown as H1 for style compliance */
+  .title { margin-top: 6px; }
+  .title h1 { display: inline-block; }
+
+  .ref { margin-top:6px; font-weight:700; font-size: 11pt; }
+
+  .meta {
+    margin-top:12px; font-size: 11pt;
+    border-collapse:collapse; width:100%;
+  }
+  .meta td { padding: 3px 0; vertical-align:top; }
+  .meta td:first-child { width: 130px; font-weight:700; }
+
+  .section { margin-top: 12px; }
+
+  /* Grid for items + tags (Makluman/Tindakan) */
+  .items { margin-top: 4px; }
+  .item {
+    display:grid;
+    grid-template-columns: 28px auto 120px; /* no., text, tag */
+    column-gap: 10px;
+    align-items:start;
+    margin: 2px 0;
+    font-size: 11pt;
+  }
+  .item .no { font-weight:700; }
+  .item .text { line-height:1.4; }
+  .item .tag { text-align:right; font-weight:700; white-space:nowrap; }
+
+  /* sub-level indent */
+  .item.sub1 { margin-left: 18px; }
+  .item.sub2 { margin-left: 36px; }
+  .item.sub3 { margin-left: 54px; }
+
+  .text p { margin: 0 0 5px 0; text-align: justify; }
+  .text ul, .text ol { margin: 0 0 6px 18px; }
+
+  /* Markdown table styling */
+  table.md {
+    border-collapse: collapse; width:100%; margin: 8px 0;
+    font-size: 11pt;
+  }
+  table.md th, table.md td { border: 1px solid #777; padding: 6px; }
+  table.md th { font-weight:700; }
+
+  #footer { string-set: footer content(attr(data-footer)); }
+</style>
+</head>
+<body>
+  <div id="footer" data-footer="{{ footer_text|e }}"></div>
+
+<div class="header">
+  {% if logo_src %}
+    <img src="{{ logo_src }}" class="logo" />
+  {% endif %}
+
+  <div class="title">
+    <!-- Title rendered as H1 to apply the exact style rules -->
+    <h1>{{ title_text|upper }}</h1>
+  </div>
+
+  {% if rujukan %}
+    <div class="ref">Rujukan: {{ rujukan }}</div>
+  {% endif %}
+</div>
+
+  <table class="meta">
+    <tr><td>Bil. Mesyuarat</td><td>: {{ bil|e }}</td></tr>
+    <tr><td>Tarikh</td><td>: {{ tarikh|e }}</td></tr>
+    <tr><td>Masa</td><td>: {{ masa|e }}</td></tr>
+    <tr><td>Tempat</td><td>: {{ tempat|e }}</td></tr>
+  </table>
+
+  <!-- BODY: already pre-cleaned markdown->HTML with our wrappers -->
+  {{ body_html|safe }}
+</body>
+</html>

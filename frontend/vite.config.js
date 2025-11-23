@@ -5,17 +5,16 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '0.0.0.0',
     port: 3000,
+    hmr: false,  // Disable HMR to prevent connection attempts
     proxy: {
-      '/transcribe': 'http://localhost:5000',
-      '/completion': 'http://localhost:5000',
-      '/process_text': 'http://localhost:5000',
-      '/minutes': 'http://localhost:5000',
-      '/logout': 'http://localhost:5000',
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      }
     }
-  },
-  build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
   }
 })

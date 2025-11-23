@@ -257,7 +257,7 @@ class AudioTranscriber:
                 output_path = Path(audio_path).stem + "_transcription.txt"
         
         # Set API base and model based on model_name
-        if model_name == "Malaysia Whisper":
+        if model_name == "Malaysia Whisper" or model_name == "Whisper Malaysia":
             api_base = API_BASE_MALAYSIA
             model = TRANSCRIPTION_MODEL_MALAYSIA
         else:  # Default to Whisper model
@@ -441,6 +441,9 @@ class AudioTranscriber:
         
         return result
 
+    def get_available_models(self):
+        """Get list of available models."""
+        return ["Whisper", "Whisper Malaysia"]
 
 
 def main():

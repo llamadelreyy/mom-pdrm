@@ -1,0 +1,54 @@
+{
+  "5347ccaf-b353-4e88-aa83-9540cf5785d8": {
+    "status": "completed",
+    "file_name": "9b886f57-22ac-4f00-8f52-85c7070cea2f.m4a",
+    "file_path": "uploads/3748c91b-5b45-43c7-a111-4e884c3d01a8_9b886f57-22ac-4f00-8f52-85c7070cea2f.m4a",
+    "settings": {
+      "max_workers": 6,
+      "model_name": "Whisper Malaysia",
+      "language": "auto",
+      "title": "Hello"
+    },
+    "progress": 100,
+    "message": "Transkrip selesai"
+  },
+  "697cdc90-c424-4f1d-85b9-4819c3cd674e": {
+    "status": "error",
+    "file_name": "CSM Kickoff Meeting 11.9.2025.m4a",
+    "file_path": "uploads/6c345206-feca-41f5-81e6-61e23ecdad10_CSM Kickoff Meeting 11.9.2025.m4a",
+    "settings": {
+      "max_workers": 6,
+      "model_name": "Whisper Malaysia",
+      "language": "auto",
+      "title": "Testing"
+    },
+    "progress": 0,
+    "message": "Ralat semasa transkripsi: Error transcribing audio file: Error transcribing audio chunk: Client error '404 Not Found' for url 'http://60.51.17.97:7801/v1/audio/transcriptions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+  },
+  "24417762-74f8-47ce-b434-52581b306434": {
+    "status": "error",
+    "file_name": "CSM Kickoff Meeting 11.9.2025.m4a",
+    "file_path": "uploads/6c345206-feca-41f5-81e6-61e23ecdad10_CSM Kickoff Meeting 11.9.2025.m4a",
+    "settings": {
+      "max_workers": 6,
+      "model_name": "Whisper Malaysia",
+      "language": "auto",
+      "title": "Testing1"
+    },
+    "progress": 0,
+    "message": "Ralat semasa transkripsi: Error transcribing audio file: Error transcribing audio chunk: Client error '400 Bad Request' for url 'http://60.51.17.97:7801/v1/audio/transcriptions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+  },
+  "d95f87b4-8275-4b7e-885f-d8202087c9e0": {
+    "status": "completed",
+    "file_name": "CSM Kickoff Meeting 11.9.2025.m4a",
+    "file_path": "uploads/6c345206-feca-41f5-81e6-61e23ecdad10_CSM Kickoff Meeting 11.9.2025.m4a",
+    "settings": {
+      "max_workers": 6,
+      "model_name": "Whisper Malaysia",
+      "language": "auto",
+      "title": "Testing1"
+    },
+    "progress": 100,
+    "message": "Transkrip selesai"
+  }
+}

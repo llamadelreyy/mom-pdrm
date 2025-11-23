@@ -1,0 +1,13 @@
+{
+  "693eaaa8-7c65-4a94-a5e3-0fb870be7980": {
+    "id": "693eaaa8-7c65-4a94-a5e3-0fb870be7980",
+    "status": "completed",
+    "transcript_id": "d95f87b4-8275-4b7e-885f-d8202087c9e0",
+    "prompt": "Convert the meeting transcript into a clean PDRM meeting minutes document in Bahasa Malaysia.\n\nStart with header information:\n[Extract descriptive meeting title from context]\nRujukan: [Generate reference like PDRM/MM/2025/001]\nBil. Mesyuarat: [Infer number like 1/2025]\nTarikh: [Extract or infer date]\nMasa: [Extract meeting duration]\nTempat: [Extract location]\n\nThen provide content sections:\n\n## KEHADIRAN\n[Name/Title] (Pengerusi) [Hadir]\n[Name/Title] [Hadir/Tidak Hadir]\n\nThen these are all the agenda for the meeting, from start to end.\n## [EXTRACT TOPIC]\n\nFor each points, items and subitems, classify correctly:\n- **[Makluman]** - ONLY for pure information with no action required\n- **[Specific Person/Department]** - For ALL action items, identify WHO is responsible. No need to put the word \"Tindakan:\"\n- **[Perbincangan]** - For ongoing discussions needing follow-up\n\nCRITICAL: For action items like training, follow-ups, implementations - ALWAYS specify the responsible party, never use [Makluman].\n\nExamples:\n\u2705 Attend refresher course [Pegawai Ahmad]\n\u2705 Submit report by Friday [MCSB]\n\u2705 Schedule follow-up meeting [Ketua Unit]\n\u274c Training required [Makluman] \u2190 WRONG\n\nList all items in detail. Use 1 2 3 for number\nUse sub-numbering (1.1.1, 1.1.2) for subitems.\n\nAt the end of it:\n## PENUTUP\n1. Mesyuarat ditangguhkan pada [time]\n2. Disediakan oleh: [name]\n3. Disemak oleh: [name]\n\nOutput the structured content in detail with explanatory for each subunits.",
+    "title": "Testing1",
+    "progress": 100,
+    "message": "Laporan selesai",
+    "created_at": "2025-11-24T01:51:44.912601",
+    "file_path": "reports/693eaaa8-7c65-4a94-a5e3-0fb870be7980.docx"
+  }
+}

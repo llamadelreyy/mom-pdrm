@@ -1,1553 +1,1043 @@
-from datetime import datetime, timedelta
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Request, Body, Query, Form, Depends, HTTPException, status, Cookie
-from fastapi.responses import JSONResponse, HTMLResponse, FileResponse, RedirectResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer
-from typing import Optional
-from bs4 import BeautifulSoup
-from docx.enum.text import WD_COLOR_INDEX
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, status, Request, Response
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr
+import uvicorn
 import os
-import shutil
-import logging
-from pathlib import Path
-import uuid
-import requests
-import markdown
-from markdown import markdown as md_to_html
-from weasyprint import HTML
-from docx import Document
-import re
-import asyncio
 import json
-
-# Import the AudioTranscriber class from transcribe_audio module
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict
+from pathlib import Path
+import bcrypt
+import logging
+import uuid
+import aiofiles
+import shutil
+import asyncio
+import threading
+import time
 from transcribe_audio import AudioTranscriber
+from docx import Document
+import httpx
+from dotenv import load_dotenv
 
-# Import auth module
-from auth import (
-    authenticate_user, create_user, get_current_user_from_token, create_tokens,
-    UserCreate, UserLogin, Token, verify_token
-)
+# Load environment variables
+load_dotenv()
 
-# Configure logging
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# LLM configuration
-LLM_MODEL = "llm_model"
-LLM_ADDRESS = "http://60.51.17.97:9501/v1/chat/completions"
+# Load API URLs from environment variables
+WHISPER_API_URL = os.getenv("WHISPER_API_URL")
+TEXT_API_URL = os.getenv("TEXT_API_URL")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Log that the service is starting
-    logger.info("Starting up Audio Transcription Service")
-    yield
-    # Shutdown: Log that the service is shutting down
-    logger.info("Shutting down Audio Transcription Service")
-
-# Setup security
-security = HTTPBearer()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-app = FastAPI(
-    title="Audio Transcription Service",
-    description="A service that transcribes audio files using the AudioTranscriber class",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-async def get_current_user(request: Request, access_token: Optional[str] = Cookie(None)):
-    """Dependency to get the current user from JWT token."""
-    # Allow access to login and register pages without authentication
-    if any(path in str(request.url) for path in ["/login", "/register", "/static/", "/downloads/"]):
-        return None
-    
-    # Check for token in cookie first, then in Authorization header
-    token = access_token
-    if not token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-    
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    user = get_current_user_from_token(token)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    return user
-
-async def get_current_active_user(current_user: dict = Depends(get_current_user)):
-    """Get current active user."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    if not current_user.get("is_active", True):
-        raise HTTPException(status_code=400, detail="Inactive user")
-    
-    return current_user
-
-# Mount static files directory
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
-# Mount downloads directory
-downloads_path = Path(__file__).parent / "downloads"
-downloads_path.mkdir(exist_ok=True)
-logger.info(f"Downloads directory path: {downloads_path.absolute()}")
-logger.info(f"Downloads directory exists: {downloads_path.exists()}")
-app.mount("/downloads", StaticFiles(directory = downloads_path), name="downloads")
-# Setup templates
-# Setup templates with custom filter for Jinja2
-templates = Jinja2Templates(directory=Path(__file__).parent / "static")
-
-# Add custom filter to format datetime
-templates.env.filters['datetime'] = lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if x else ''
+if not WHISPER_API_URL or not TEXT_API_URL:
+    raise ValueError("WHISPER_API_URL and TEXT_API_URL must be set in .env file")
 
 # Create necessary directories
-UPLOAD_DIR = Path(__file__).parent/"uploads"
-TRANSCRIPTION_DIR = Path(__file__).parent/"transcriptions"
-DOWNLOAD_DIR = downloads_path
+UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
-TRANSCRIPTION_DIR.mkdir(exist_ok=True)
-DOWNLOAD_DIR.mkdir(exist_ok=True)
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+REPORTS_DIR = Path("reports")
+REPORTS_DIR.mkdir(exist_ok=True)
 
-# Initialize the AudioTranscriber
-transcriber = AudioTranscriber()
+# Data storage files
+USERS_FILE = DATA_DIR / "users.json"
+UPLOADS_FILE = DATA_DIR / "uploads.json"
+TRANSCRIPTS_FILE = DATA_DIR / "transcripts.json"
+JOBS_FILE = DATA_DIR / "jobs.json"
+REPORTS_FILE = DATA_DIR / "reports.json"
 
-# Progress tracking
-progress_store = {}
+# Initialize storage files if they don't exist
+def init_storage_file(file_path: Path, default_data: Dict = None):
+    if not file_path.exists():
+        with open(file_path, 'w') as f:
+            json.dump(default_data or {}, f)
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request, current_user: dict = Depends(get_current_active_user)):
-    """
-    Root endpoint serving the HTML interface for the transcription service.
-    """
-    return templates.TemplateResponse("index.html", {"request": request, "user": current_user})
+init_storage_file(USERS_FILE)
+init_storage_file(UPLOADS_FILE)
+init_storage_file(TRANSCRIPTS_FILE)
+init_storage_file(JOBS_FILE)
+init_storage_file(REPORTS_FILE)
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle HTTP exceptions, specifically for authentication errors."""
-    if exc.status_code == 401:
-        # Redirect to login page for unauthorized access
-        return RedirectResponse(url="/login")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
-
-@app.get("/logout")
-async def logout():
-    """Handle logout by clearing cookie and redirecting to login page."""
-    response = RedirectResponse(url="/login")
-    response.delete_cookie("access_token")
-    return response
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    """Serve the login page."""
-    return templates.TemplateResponse("login.html", {"request": request})
-
-@app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
-    """Serve the registration page."""
-    return templates.TemplateResponse("register.html", {"request": request})
-
-@app.post("/register")
-async def register(user_data: UserCreate):
-    """Handle user registration."""
+def load_data(file_path: Path) -> Dict:
     try:
-        user = create_user(user_data)
-        return JSONResponse(
-            content={"message": "User created successfully", "username": user["username"]},
-            status_code=201
-        )
-    except HTTPException as e:
-        raise e
+        with open(file_path, 'r') as f:
+            return json.load(f)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error loading data from {file_path}: {str(e)}")
+        return {}
 
-@app.post("/token")
-async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    """Handle login form submission and return JWT tokens."""
-    user = authenticate_user(form_data.username, form_data.password)
-    if not user:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Incorrect username or password"},
-            status_code=401
+def save_data(file_path: Path, data: Dict):
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving data to {file_path}: {str(e)}")
+
+# Models
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str
+    confirm_password: str
+    full_name: str
+
+class User(BaseModel):
+    username: str
+    email: str
+    full_name: str
+
+class TranscribeRequest(BaseModel):
+    file_id: str
+    title: str
+    max_workers: int = 6
+    model_name: str = "Whisper Malaysia"
+    language: str = "auto"
+
+class TranscriptUpdate(BaseModel):
+    text: str
+
+class GenerateReportRequest(BaseModel):
+    transcript_id: str
+    prompt: str
+    title: str
+
+# Create FastAPI app instance
+app = FastAPI(title="PDRM Meeting Minutes Assistant")
+
+# Add CORS middleware
+origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:5173",
+    "http://192.168.50.140:3000",
+    "http://192.168.50.140:3001",
+    "http://192.168.50.140:5173",
+    "https://columns-wide-twice-shape.trycloudflare.com",
+    "http://columns-wide-twice-shape.trycloudflare.com",
+    "https://*.trycloudflare.com",  # Allow all Cloudflare tunnel domains
+    "http://*.trycloudflare.com",   # Allow both http and https for tunnels
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers"
+    ],
+)
+
+# Storage dictionaries (now backed by files)
+upload_progress = {}  # This can stay in memory as it's temporary
+
+def process_transcription(job_id: str):
+    """Process transcription using AudioTranscriber."""
+    try:
+        jobs = load_data(JOBS_FILE)
+        job = jobs[job_id]
+        job["status"] = "processing"
+        save_data(JOBS_FILE, jobs)
+        
+        # Create AudioTranscriber instance
+        transcriber = AudioTranscriber()
+        
+        # Get file path and settings
+        file_path = job["file_path"]
+        settings = job["settings"]
+        
+        # Update progress for initialization
+        job["progress"] = 0
+        job["message"] = "Memulakan transkripsi..."
+        save_data(JOBS_FILE, jobs)
+        
+        # Start transcription
+        try:
+            # Transcribe the file
+            transcription = transcriber.transcribe_file(
+                audio_path=file_path,
+                max_workers=settings["max_workers"],
+                model_name=settings["model_name"],
+                language=settings["language"],
+                format="txt"  # We want plain text output
+            )
+            
+            # Update job status
+            job["status"] = "completed"
+            job["progress"] = 100
+            job["message"] = "Transkrip selesai"
+            save_data(JOBS_FILE, jobs)
+            
+            # Store the transcript
+            transcripts = load_data(TRANSCRIPTS_FILE)
+            transcripts[job_id] = {
+                "text": transcription,
+                "title": settings["title"]
+            }
+            save_data(TRANSCRIPTS_FILE, transcripts)
+            
+        except Exception as e:
+            logger.error(f"Transcription error: {str(e)}")
+            job["status"] = "error"
+            job["message"] = f"Ralat semasa transkripsi: {str(e)}"
+            job["progress"] = 0
+            save_data(JOBS_FILE, jobs)
+            
+    except Exception as e:
+        logger.error(f"Error in transcription process: {str(e)}")
+        jobs = load_data(JOBS_FILE)
+        if job_id in jobs:
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["message"] = "Ralat semasa pemprosesan"
+            save_data(JOBS_FILE, jobs)
+
+async def generate_report_content(transcript_text: str, prompt: str) -> str:
+    """Generate report content using Malaysian text model."""
+    try:
+        # Log request details
+        logger.info(f"Making request to text model at: {TEXT_API_URL}")
+        logger.info(f"Transcript length: {len(transcript_text)}")
+        logger.info(f"Prompt length: {len(prompt)}")
+
+        # Create client with more specific timeout settings - increased for LLM processing
+        timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+        
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            # Prepare request payload
+            payload = {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": """Anda adalah penulis laporan profesional. Tugas anda adalah menganalisis transkrip yang diberikan
+                        dan membuat laporan berstruktur mengikut format yang diberikan. Laporan tersebut mestilah jelas,
+                        profesional, dan mengikut format yang betul. Gunakan bullet points di mana sesuai."""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Berikut adalah transkrip:\n\n{transcript_text[:4000]}\n\nSila buat laporan mengikut format ini:\n\n{prompt}"
+                    }
+                ],
+                "model": "llm_model",
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+            
+            logger.info(f"Request payload prepared, making POST to: {TEXT_API_URL}/chat/completions")
+
+            # Make request with detailed error handling
+            try:
+                response = await client.post(
+                    f"{TEXT_API_URL}/chat/completions",
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "User-Agent": "PDRM-Minutes-App/1.0"
+                    }
+                )
+                
+                # Log response status
+                logger.info(f"Text model response status: {response.status_code}")
+                logger.info(f"Response headers: {dict(response.headers)}")
+                
+                # Handle non-200 responses
+                if response.status_code != 200:
+                    logger.error(f"Non-200 response: {response.status_code}")
+                    logger.error(f"Response content: {response.text}")
+                    raise Exception(f"Text model API returned status {response.status_code}")
+                
+                # Parse response
+                try:
+                    result = response.json()
+                    logger.info("Successfully parsed response JSON")
+                    logger.info(f"Response keys: {list(result.keys())}")
+                except Exception as e:
+                    logger.error(f"Error parsing response JSON: {str(e)}")
+                    logger.error(f"Response content: {response.text}")
+                    raise Exception("Invalid JSON response from text model")
+                
+                # Validate response structure
+                if "choices" not in result:
+                    logger.error(f"Missing 'choices' in response. Available keys: {list(result.keys())}")
+                    logger.error(f"Full response: {result}")
+                    raise Exception("Invalid response structure from text model")
+                
+                if not result["choices"]:
+                    logger.error("Empty choices array in response")
+                    raise Exception("No content generated by text model")
+                
+                if "message" not in result["choices"][0]:
+                    logger.error(f"Missing 'message' in first choice: {result['choices'][0]}")
+                    raise Exception("Invalid response format from text model")
+                
+                if "content" not in result["choices"][0]["message"]:
+                    logger.error(f"Missing 'content' in message: {result['choices'][0]['message']}")
+                    raise Exception("Invalid response content from text model")
+                
+                content = result["choices"][0]["message"]["content"]
+                logger.info(f"Successfully generated content of length: {len(content)}")
+                return content
+
+            except httpx.TimeoutException as e:
+                logger.error(f"Timeout error to text model: {str(e)}")
+                raise Exception("Request to text model API timed out")
+                
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error from text model: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.text}")
+                raise Exception(f"Text model API error: {e.response.status_code}")
+
+            except httpx.ConnectError as e:
+                logger.error(f"Connection error to text model: {str(e)}")
+                logger.error(f"Full error details: {repr(e)}")
+                raise Exception(f"Failed to connect to text model API: {str(e)}")
+                
+            except httpx.RequestError as e:
+                logger.error(f"Request error to text model: {str(e)}")
+                logger.error(f"Full error details: {repr(e)}")
+                logger.error(f"Error type: {type(e).__name__}")
+                raise Exception(f"Request error to text model API: {str(e)}")
+
+    except Exception as e:
+        logger.error(f"Error generating report content: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        raise Exception(f"Failed to generate report content: {str(e)}")
+
+def create_docx_report(title: str, prompt: str, content: str) -> Document:
+    """Create a DOCX document with the report content."""
+    doc = Document()
+    
+    # Add logo to the top of the document
+    try:
+        from docx.shared import Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        
+        # Create a paragraph for the logo
+        logo_paragraph = doc.add_paragraph()
+        logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add logo image
+        logo_path = Path("static/asset/logo.png")
+        if logo_path.exists():
+            run = logo_paragraph.runs[0] if logo_paragraph.runs else logo_paragraph.add_run()
+            run.add_picture(str(logo_path), width=Inches(2.5))
+        else:
+            # Fallback if logo not found
+            logo_paragraph.add_run("POLIS DIRAJA MALAYSIA").bold = True
+            
+        # Add some space after logo
+        doc.add_paragraph()
+        
+    except Exception as e:
+        logger.warning(f"Could not add logo to document: {str(e)}")
+        # Add text header as fallback
+        header_para = doc.add_paragraph("POLIS DIRAJA MALAYSIA")
+        header_para.runs[0].bold = True
+        header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph()
+    
+    # Add title
+    title_para = doc.add_heading(f"{title}", 0)
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Add content directly without showing the prompt
+    # Split content by lines and add them to document
+    for line in content.split('\n'):
+        if line.strip():
+            # Check if line is a heading (starts with #)
+            if line.startswith('#'):
+                level = line.count('#')
+                text = line.strip('#').strip()
+                doc.add_heading(text, level)
+            else:
+                # Check if line is a bullet point
+                if line.strip().startswith('- ') or line.strip().startswith('* '):
+                    doc.add_paragraph(line.strip('- ').strip('* '), style='List Bullet')
+                else:
+                    doc.add_paragraph(line)
+    
+    return doc
+
+def process_report_generation(report_id: str):
+    """Process report generation."""
+    try:
+        reports = load_data(REPORTS_FILE)
+        report = reports[report_id]
+        report["status"] = "processing"
+        save_data(REPORTS_FILE, reports)
+
+        # Get transcript
+        transcripts = load_data(TRANSCRIPTS_FILE)
+        transcript = transcripts.get(report["transcript_id"])
+        
+        if not transcript:
+            raise Exception("Transcript not found")
+
+        # Update progress
+        reports = load_data(REPORTS_FILE)
+        report = reports[report_id]
+        report["progress"] = 20
+        report["message"] = "Menganalisis transkrip..."
+        save_data(REPORTS_FILE, reports)
+
+        # Generate report content using LLM
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        content = loop.run_until_complete(
+            generate_report_content(transcript["text"], report["prompt"])
         )
-    
-    # Create tokens
-    tokens = create_tokens(user)
-    
-    # Create response and set token in secure cookie
-    response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
-    response.set_cookie(
-        key="access_token",
-        value=tokens.access_token,
-        httponly=True,
-        max_age=1800,  # 30 minutes
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax"
-    )
-    return response
+        loop.close()
 
-@app.post("/api/login")
-async def api_login(user_credentials: UserLogin):
-    """Handle API login and return JWT tokens."""
-    user = authenticate_user(user_credentials.username, user_credentials.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    tokens = create_tokens(user)
-    return tokens
+        # Update progress
+        reports = load_data(REPORTS_FILE)
+        report = reports[report_id]
+        report["progress"] = 60
+        report["message"] = "Menjana dokumen laporan..."
+        save_data(REPORTS_FILE, reports)
 
-@app.get("/api/info")
-async def api_info():
-    """
-    API information endpoint for JSON data about the service.
-    """
-    return {
-        "message": "Audio Transcription Service",
-        "version": "1.0.0",
-        "endpoints": {
-            "POST /transcribe": "Transcribe an uploaded audio file",
-            "GET /health": "Check the health status of the service"
+        # Create DOCX document
+        doc = create_docx_report(report["title"], report["prompt"], content)
+        
+        # Save document
+        report_path = REPORTS_DIR / f"{report_id}.docx"
+        doc.save(str(report_path))
+
+        # Update report status
+        reports = load_data(REPORTS_FILE)
+        report = reports[report_id]
+        report["status"] = "completed"
+        report["progress"] = 100
+        report["message"] = "Laporan selesai"
+        report["file_path"] = str(report_path)
+        save_data(REPORTS_FILE, reports)
+
+    except Exception as e:
+        logger.error(f"Report generation error: {str(e)}")
+        reports = load_data(REPORTS_FILE)
+        if report_id in reports:
+            reports[report_id]["status"] = "error"
+            reports[report_id]["message"] = f"Ralat semasa menjana laporan: {str(e)}"
+            reports[report_id]["progress"] = 0
+            save_data(REPORTS_FILE, reports)
+
+@app.post("/register", response_model=User)
+async def register(user_data: UserCreate):
+    try:
+        logger.info(f"Received registration request for username: {user_data.username}")
+        
+        users = load_data(USERS_FILE)
+        
+        # Validate passwords match
+        if user_data.password != user_data.confirm_password:
+            logger.warning("Password mismatch")
+            raise HTTPException(
+                status_code=400,
+                detail="Passwords do not match"
+            )
+        
+        # Check if username exists
+        if user_data.username in users:
+            logger.warning(f"Username {user_data.username} already exists")
+            raise HTTPException(
+                status_code=400,
+                detail="Username already registered"
+            )
+
+        # Hash password
+        hashed = bcrypt.hashpw(user_data.password.encode(), bcrypt.gensalt())
+        
+        # Store user
+        users[user_data.username] = {
+            "username": user_data.username,
+            "email": user_data.email,
+            "full_name": user_data.full_name,
+            "hashed_password": hashed.decode(),  # Convert bytes to string for JSON storage
+            "created_at": datetime.now().isoformat(),
+            "last_login": None
         }
+        save_data(USERS_FILE, users)
+        
+        logger.info(f"Successfully registered user: {user_data.username}")
+        return {
+            "username": user_data.username,
+            "email": user_data.email,
+            "full_name": user_data.full_name
+        }
+        
+    except HTTPException as e:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred during registration"
+        )
+
+@app.post("/login")
+async def login(user_data: UserLogin):
+    logger.info(f"Login attempt for email: {user_data.email}")
+    
+    users = load_data(USERS_FILE)
+    
+    # Find user by email
+    user = None
+    username = None
+    for uname, udata in users.items():
+        if udata.get("email", "").lower() == user_data.email.lower():
+            user = udata
+            username = uname
+            break
+    
+    if not user:
+        logger.warning(f"User not found with email: {user_data.email}")
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password"
+        )
+    
+    if not bcrypt.checkpw(user_data.password.encode(), user["hashed_password"].encode()):
+        logger.warning(f"Invalid password for email: {user_data.email}")
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password"
+        )
+    
+    # Update last login
+    users[username]["last_login"] = datetime.now().isoformat()
+    save_data(USERS_FILE, users)
+    
+    logger.info(f"Successful login for email: {user_data.email}")
+    return {
+        "token": "dummy_token",  # In production, use proper JWT
+        "name": user["full_name"]
     }
 
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint to verify the service is running.
-    """
-    return {"status": "healthy"}
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        # Generate unique file ID
+        file_id = str(uuid.uuid4())
+        upload_progress[file_id] = 0
+        
+        # Create file path
+        file_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
+        logger.info(f"Saving file to: {file_path}")
+        
+        # Save file with progress tracking
+        file_size = 0
+        chunk_size = 8192  # 8KB chunks
+        
+        async with aiofiles.open(file_path, 'wb') as f:
+            while chunk := await file.read(chunk_size):
+                await f.write(chunk)
+                file_size += len(chunk)
+                upload_progress[file_id] = min(99, int((file_size / file.size) * 100))
+        
+        upload_progress[file_id] = 100
+        
+        # Store file info
+        uploads = load_data(UPLOADS_FILE)
+        uploads[file_id] = {
+            "filename": file.filename,
+            "path": str(file_path),
+            "size": file_size
+        }
+        save_data(UPLOADS_FILE, uploads)
+        
+        logger.info(f"File saved successfully. ID: {file_id}, Path: {file_path}")
+        return {
+            "file_id": file_id,
+            "filename": file.filename,
+            "size": file_size
+        }
+        
+    except Exception as e:
+        logger.error(f"Upload error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload file: {str(e)}"
+        )
+
+@app.get("/upload-progress/{file_id}")
+async def get_upload_progress(file_id: str):
+    if file_id not in upload_progress:
+        raise HTTPException(
+            status_code=404,
+            detail="Upload not found"
+        )
+    
+    return {
+        "progress": upload_progress[file_id]
+    }
+
+@app.post("/transcribe")
+async def transcribe_audio(request: TranscribeRequest):
+    try:
+        logger.info(f"Received transcription request for file ID: {request.file_id}")
+        
+        # Check if file exists
+        uploads = load_data(UPLOADS_FILE)
+        file_info = uploads.get(request.file_id)
+        if not file_info:
+            logger.error(f"File not found in uploaded_files. Available IDs: {list(uploads.keys())}")
+            raise HTTPException(
+                status_code=404,
+                detail="File not found"
+            )
+
+        # Check if file exists on disk
+        file_path = Path(file_info["path"])
+        if not file_path.exists():
+            logger.error(f"File not found on disk: {file_path}")
+            raise HTTPException(
+                status_code=404,
+                detail="File not found on disk"
+            )
+
+        # Generate unique request ID
+        request_id = str(uuid.uuid4())
+        
+        # Save transcription job info
+        jobs = load_data(JOBS_FILE)
+        jobs[request_id] = {
+            "status": "pending",
+            "file_name": file_info["filename"],
+            "file_path": str(file_path),
+            "settings": {
+                "max_workers": request.max_workers,
+                "model_name": request.model_name,
+                "language": request.language,
+                "title": request.title
+            },
+            "progress": 0,
+            "message": "Memulakan transkripsi..."
+        }
+        save_data(JOBS_FILE, jobs)
+        
+        # Start transcription in a background thread
+        thread = threading.Thread(target=process_transcription, args=(request_id,))
+        thread.daemon = True  # Make thread daemon so it doesn't block shutdown
+        thread.start()
+        
+        logger.info(f"Created transcription job: {request_id}")
+        
+        return {
+            "request_id": request_id,
+            "message": "Transcription job started"
+        }
+        
+    except HTTPException as e:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Transcription error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start transcription: {str(e)}"
+        )
 
 @app.get("/progress/{request_id}")
 async def get_progress(request_id: str):
-    """Stream progress updates for a specific request."""
-    
-    async def generate():
-        while True:
-            if request_id in progress_store:
-                progress_data = progress_store[request_id]
-                yield f"data: {json.dumps(progress_data)}\n\n"
-                
-                # If completed, send final message and cleanup
-                if progress_data.get('completed', False):
-                    del progress_store[request_id]
-                    break
-            else:
-                # Send heartbeat if no progress yet
-                yield f"data: {json.dumps({'status': 'waiting', 'message': 'Initializing...'})}\n\n"
-            
-            await asyncio.sleep(0.5)  # Update every 500ms
-    
-    return StreamingResponse(
-        generate(),
-        media_type="text/plain",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Content-Type": "text/event-stream",
-        }
-    )
-
-@app.post("/process_text")
-async def process_text(
-    text: str = Form(...),
-    output_format: str = Query("pdf", regex="^(pdf|docx|txt)$")
-):
-    """
-    Endpoint to process text input and return downloadable files in multiple formats.
-    
-    Args:
-        text: The text to process
-        output_format: The desired output file format (pdf, docx, or txt)
-    
-    Returns:
-        JSON response with download URLs for all file formats
-    """
-    try:
-        logger.info(f"Text : {text}")
-        html = markdown.markdown(text, extensions=['tables'])
-        logger.info(f"HTML : {html}")
-        
-        # Generate all file formats
-        pdf_path = generate_pdf(html)
-        docx_path = generate_docx(html)
-        txt_path = generate_txt(text)
-        
-        # Create download URLs
-        return JSONResponse({
-            "pdf_url": f"/downloads/{pdf_path.name}",
-            "docx_url": f"/downloads/{docx_path.name}",
-            "txt_url": f"/downloads/{txt_path.name}"
-        })
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
-
-def generate_txt(text: str) -> Path:
-    """Generate a TXT file from text content."""
-    # Generate unique filename
-    filename = f"document_{uuid.uuid4().hex[:8]}.txt"
-    file_path = DOWNLOAD_DIR / filename
-    
-    logger.info(f"Saving TXT to: {file_path.absolute()}")
-    
-    # Save the text file
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(text)
-    
-    logger.info(f"TXT file exists after save: {file_path.exists()}")
-    
-    return file_path
-    
-def generate_pdf(text: str) -> Path:
-    """Generate a PDF file from text content."""
-    # Create HTML content with basic styling
-    html_content = f"""
-    <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                h1 {{ color: #333; }}
-                h2 {{ color: #444; }}
-                p {{ line-height: 1.6; }}
-                code {{ background: #f4f4f4; padding: 2px 5px; }}
-                pre {{ background: #f4f4f4; padding: 10px; overflow: auto; }}
-            </style>
-        </head>
-        <body>
-            {text}
-        </body>
-    </html>
-    """
-    
-    # Generate unique filename
-    filename = f"document_{uuid.uuid4().hex[:8]}.pdf"
-    file_path = DOWNLOAD_DIR / filename
-    
-    logger.info(f"Saving PDF to: {file_path.absolute()}")
-    
-    # Convert HTML to PDF
-    HTML(string=html_content).write_pdf(str(file_path))
-    
-    logger.info(f"PDF file exists after save: {file_path.exists()}")
-    
-    return file_path
-
-def generate_docx(text: str) -> Path:
-    """Generate a DOCX file from text content."""
-    # Create a new Document
-    doc = Document()
-    
-    # Clear default paragraph
-    for paragraph in doc.paragraphs:
-        p = paragraph._element
-        p.getparent().remove(p)
-    
-    # Parse HTML and add content with formatting
-    soup = BeautifulSoup(text, 'html.parser')
-    
-    for element in soup.children:
-        if element.name == 'h1':
-            doc.add_heading(element.get_text(), level=1)
-        elif element.name == 'h2':
-            doc.add_heading(element.get_text(), level=2)
-        elif element.name == 'p':
-            # Handle paragraphs with potential inline formatting
-            p = doc.add_paragraph()
-            for child in element.children:
-                if hasattr(child, 'name'):
-                    if child.name == 'strong' or child.name == 'b':
-                        p.add_run(child.get_text()).bold = True
-                    elif child.name == 'em' or child.name == 'i':
-                        p.add_run(child.get_text()).italic = True
-                    elif child.name == 'code':
-                        p.add_run(child.get_text()).font.highlight_color = WD_COLOR_INDEX.GRAY_25
-                    else:
-                        p.add_run(child.get_text())
-                else:
-                    p.add_run(str(child))
-        elif element.name == 'ul':
-            for li in element.find_all('li', recursive=False):
-                doc.add_paragraph(li.get_text(), style='List Bullet')
-        elif element.name == 'ol':
-            for li in element.find_all('li', recursive=False):
-                doc.add_paragraph(li.get_text(), style='List Number')
-    
-        # Handle table elements
-        elif element.name == 'table':
-            # Find all rows in the table
-            rows = element.find_all('tr')
-            if rows:
-                # Create table with same number of rows and columns
-                table = doc.add_table(rows=len(rows), cols=len(rows[0].find_all(['th', 'td'])))
-                table.style = 'Table Grid'
-                
-                for i, row in enumerate(rows):
-                    cells = row.find_all(['th', 'td'])
-                    for j, cell in enumerate(cells):
-                        table_cell = table.cell(i, j)
-                        # Clear any existing paragraphs
-                        for paragraph in table_cell.paragraphs:
-                            p = paragraph._element
-                            p.getparent().remove(p)
-                        
-                        # Add cell content with formatting (similar to regular paragraphs)
-                        for child in cell.children:
-                            if hasattr(child, 'name'):
-                                if child.name == 'strong' or child.name == 'b':
-                                    table_cell.add_paragraph().add_run(child.get_text()).bold = True
-                                elif child.name == 'em' or child.name == 'i':
-                                    table_cell.add_paragraph().add_run(child.get_text()).italic = True
-                                elif child.name == 'code':
-                                    table_cell.add_paragraph().add_run(child.get_text()).font.highlight_color = WD_COLOR_INDEX.GRAY_25
-                                else:
-                                    table_cell.add_paragraph().add_run(child.get_text())
-                            else:
-                                table_cell.add_paragraph().add_run(str(child))
-        
-    # Generate unique filename
-    filename = f"document_{uuid.uuid4().hex[:8]}.docx"
-    file_path = DOWNLOAD_DIR / filename
-    
-    logger.info(f"Saving DOCX to: {file_path.absolute()}")
-    
-    # Save the document
-    doc.save(str(file_path))
-    
-    logger.info(f"DOCX file exists after save: {file_path.exists()}")
-    
-    return file_path
-
-def generate_pdrm_docx_from_markdown(markdown_text: str, meta: dict, logo_path: str = "") -> Path:
-    """Generate DOCX directly from markdown text to avoid HTML parsing issues."""
-    from docx.shared import Inches, Pt
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    import re
-    
-    # Create a new Document
-    doc = Document()
-    
-    # Set Arial font as default
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'Arial'
-    font.size = Pt(11)
-    
-    # Clear default paragraph
-    for paragraph in doc.paragraphs:
-        p = paragraph._element
-        p.getparent().remove(p)
-    
-    # Add header section
-    # Logo (if available)
-    if logo_path and os.path.exists(logo_path):
-        try:
-            header_para = doc.add_paragraph()
-            header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = header_para.runs[0] if header_para.runs else header_para.add_run()
-            run.add_picture(logo_path, height=Inches(1.67))  # 120px ≈ 1.67 inches
-        except Exception:
-            pass  # Skip logo if there's an issue
-    
-    # Title (H1 style: 12pt, bold, uppercase, underlined)
-    if meta.get('title_text'):
-        title_para = doc.add_paragraph()
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_run = title_para.add_run(meta['title_text'].upper())
-        title_run.font.name = 'Arial'
-        title_run.font.size = Pt(12)
-        title_run.font.bold = True
-        title_run.font.underline = True
-        title_para.space_after = Pt(8)
-    
-    # Reference
-    if meta.get('rujukan'):
-        ref_para = doc.add_paragraph()
-        ref_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        ref_run = ref_para.add_run(f"Rujukan: {meta['rujukan']}")
-        ref_run.font.name = 'Arial'
-        ref_run.font.size = Pt(11)
-        ref_run.font.bold = True
-        ref_para.space_after = Pt(12)
-    
-    # Metadata table
-    meta_fields = [
-        ('Bil. Mesyuarat', meta.get('bil')),
-        ('Tarikh', meta.get('tarikh')),
-        ('Masa', meta.get('masa')),
-        ('Tempat', meta.get('tempat'))
-    ]
-    
-    # Only add metadata if we have any values
-    meta_to_add = [(k, v) for k, v in meta_fields if v]
-    if meta_to_add:
-        meta_table = doc.add_table(rows=len(meta_to_add), cols=2)
-        meta_table.allow_autofit = True
-        
-        for i, (label, value) in enumerate(meta_to_add):
-            row = meta_table.rows[i]
-            
-            # Label cell
-            label_cell = row.cells[0]
-            label_para = label_cell.paragraphs[0]
-            label_run = label_para.add_run(label)
-            label_run.font.name = 'Arial'
-            label_run.font.size = Pt(11)
-            label_run.font.bold = True
-            label_cell.width = Inches(1.8)
-            
-            # Value cell
-            value_cell = row.cells[1]
-            value_para = value_cell.paragraphs[0]
-            value_run = value_para.add_run(f": {value}")
-            value_run.font.name = 'Arial'
-            value_run.font.size = Pt(11)
-        
-        # Add space after metadata table
-        meta_para = doc.add_paragraph()
-        meta_para.space_after = Pt(12)
-    
-    # Process markdown text line by line
-    lines = markdown_text.split('\n')
-    
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        
-        # Skip empty lines
-        if not line:
-            i += 1
-            continue
-        
-        # Handle headings
-        if line.startswith('#'):
-            level = len(line) - len(line.lstrip('#'))
-            heading_text = line.lstrip('#').strip()
-            
-            heading = doc.add_heading(heading_text, level=min(level, 3))
-            heading.runs[0].font.name = 'Arial'
-            if level == 1:
-                heading.runs[0].font.size = Pt(12)
-                heading.runs[0].font.bold = True
-                heading.runs[0].font.underline = True
-            elif level == 2:
-                heading.runs[0].font.size = Pt(12)
-                heading.runs[0].font.bold = True
-            else:
-                heading.runs[0].font.size = Pt(11)
-                heading.runs[0].font.bold = True
-        
-        # Handle numbered lists and content
-        elif re.match(r'^\d+\.', line):
-            # This is a numbered item
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            
-            # Extract number and text
-            parts = line.split('.', 1)
-            if len(parts) == 2:
-                number = parts[0].strip()
-                text = parts[1].strip()
-                
-                # Add number in bold
-                num_run = para.add_run(f"{number}. ")
-                num_run.font.name = 'Arial'
-                num_run.font.size = Pt(11)
-                num_run.font.bold = True
-                
-                # Process text for action tags
-                # Look for **[action_tag]** pattern
-                action_pattern = r'\*\*\[([^\]]+)\]\*\*'
-                
-                if '**[' in text:
-                    # Split text by action tags
-                    parts = re.split(action_pattern, text)
-                    
-                    for j, part in enumerate(parts):
-                        if j % 2 == 0:  # Regular text
-                            if part.strip():
-                                text_run = para.add_run(part)
-                                text_run.font.name = 'Arial'
-                                text_run.font.size = Pt(11)
-                        else:  # Action tag
-                            tag_run = para.add_run(f" **[{part}]**")
-                            tag_run.font.name = 'Arial'
-                            tag_run.font.size = Pt(11)
-                            tag_run.font.bold = True
-                else:
-                    # No action tags, just add text
-                    text_run = para.add_run(text)
-                    text_run.font.name = 'Arial'
-                    text_run.font.size = Pt(11)
-        
-        # Handle sub-items (1.1, 1.2, etc.)
-        elif re.match(r'^\d+\.\d+', line):
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            para.left_indent = Inches(0.5)  # Indent sub-items
-            
-            # Add the whole line as is
-            text_run = para.add_run(line)
-            text_run.font.name = 'Arial'
-            text_run.font.size = Pt(11)
-        
-        # Handle bullet points
-        elif line.startswith('-') or line.startswith('*'):
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            
-            text = line[1:].strip()  # Remove bullet
-            
-            # Add bullet
-            bullet_run = para.add_run("• ")
-            bullet_run.font.name = 'Arial'
-            bullet_run.font.size = Pt(11)
-            
-            # Add text
-            text_run = para.add_run(text)
-            text_run.font.name = 'Arial'
-            text_run.font.size = Pt(11)
-        
-        # Handle regular paragraphs
-        else:
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            
-            # Process text for formatting
-            if '**' in line:
-                parts = line.split('**')
-                for j, part in enumerate(parts):
-                    run = para.add_run(part)
-                    run.font.name = 'Arial'
-                    run.font.size = Pt(11)
-                    if j % 2 == 1:  # Odd indices are bold
-                        run.font.bold = True
-            else:
-                text_run = para.add_run(line)
-                text_run.font.name = 'Arial'
-                text_run.font.size = Pt(11)
-        
-        i += 1
-    
-    # Generate unique filename
-    filename = f"pdrm_minutes_{uuid.uuid4().hex[:8]}.docx"
-    file_path = DOWNLOAD_DIR / filename
-    
-    logger.info(f"Saving PDRM DOCX to: {file_path.absolute()}")
-    
-    # Save the document
-    doc.save(str(file_path))
-    
-    logger.info(f"PDRM DOCX file exists after save: {file_path.exists()}")
-    
-    return file_path
-
-def generate_pdrm_docx(body_html: str, meta: dict, logo_path: str = "") -> Path:
-    """Generate a DOCX file with PDRM meeting minutes format - simplified version."""
-    from docx.shared import Inches, Pt
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    
-    # Create a new Document
-    doc = Document()
-    
-    # Set Arial font as default
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'Arial'
-    font.size = Pt(11)
-    
-    # Clear default paragraph
-    for paragraph in doc.paragraphs:
-        p = paragraph._element
-        p.getparent().remove(p)
-    
-    # Add header section
-    # Logo (if available)
-    if logo_path and os.path.exists(logo_path):
-        try:
-            header_para = doc.add_paragraph()
-            header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = header_para.runs[0] if header_para.runs else header_para.add_run()
-            run.add_picture(logo_path, height=Inches(1.67))  # 120px ≈ 1.67 inches
-        except Exception:
-            pass  # Skip logo if there's an issue
-    
-    # Title (H1 style: 12pt, bold, uppercase, underlined)
-    if meta.get('title_text'):
-        title_para = doc.add_paragraph()
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_run = title_para.add_run(meta['title_text'].upper())
-        title_run.font.name = 'Arial'
-        title_run.font.size = Pt(12)
-        title_run.font.bold = True
-        title_run.font.underline = True
-        title_para.space_after = Pt(8)
-    
-    # Reference
-    if meta.get('rujukan'):
-        ref_para = doc.add_paragraph()
-        ref_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        ref_run = ref_para.add_run(f"Rujukan: {meta['rujukan']}")
-        ref_run.font.name = 'Arial'
-        ref_run.font.size = Pt(11)
-        ref_run.font.bold = True
-        ref_para.space_after = Pt(12)
-    
-    # Metadata table
-    meta_fields = [
-        ('Bil. Mesyuarat', meta.get('bil')),
-        ('Tarikh', meta.get('tarikh')),
-        ('Masa', meta.get('masa')),
-        ('Tempat', meta.get('tempat'))
-    ]
-    
-    # Only add metadata if we have any values
-    meta_to_add = [(k, v) for k, v in meta_fields if v]
-    if meta_to_add:
-        meta_table = doc.add_table(rows=len(meta_to_add), cols=2)
-        meta_table.allow_autofit = True
-        
-        for i, (label, value) in enumerate(meta_to_add):
-            row = meta_table.rows[i]
-            
-            # Label cell
-            label_cell = row.cells[0]
-            label_para = label_cell.paragraphs[0]
-            label_run = label_para.add_run(label)
-            label_run.font.name = 'Arial'
-            label_run.font.size = Pt(11)
-            label_run.font.bold = True
-            label_cell.width = Inches(1.8)
-            
-            # Value cell
-            value_cell = row.cells[1]
-            value_para = value_cell.paragraphs[0]
-            value_run = value_para.add_run(f": {value}")
-            value_run.font.name = 'Arial'
-            value_run.font.size = Pt(11)
-        
-        # Add space after metadata table
-        meta_para = doc.add_paragraph()
-        meta_para.space_after = Pt(12)
-    
-    # Parse and add body content - simplified approach for standard markdown
-    soup = BeautifulSoup(body_html, 'html.parser')
-    
-    def process_element_text(element):
-        """Process text content from HTML element with proper formatting"""
-        para = doc.add_paragraph()
-        para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        
-        for child in element.children:
-            if hasattr(child, 'name'):
-                if child.name in ['strong', 'b']:
-                    run = para.add_run(child.get_text())
-                    run.font.bold = True
-                    run.font.name = 'Arial'
-                    run.font.size = Pt(11)
-                elif child.name in ['em', 'i']:
-                    run = para.add_run(child.get_text())
-                    run.font.italic = True
-                    run.font.name = 'Arial'
-                    run.font.size = Pt(11)
-                else:
-                    run = para.add_run(child.get_text())
-                    run.font.name = 'Arial'
-                    run.font.size = Pt(11)
-            else:
-                text_content = str(child).strip()
-                if text_content:
-                    run = para.add_run(text_content)
-                    run.font.name = 'Arial'
-                    run.font.size = Pt(11)
-    
-    # Process only basic HTML elements to avoid parsing issues
-    for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'table']):
-        
-        if element.name in ['h1', 'h2', 'h3']:
-            # Section headings
-            level = int(element.name[1])
-            heading = doc.add_heading(element.get_text().strip(), level=min(level, 3))
-            heading.runs[0].font.name = 'Arial'
-            if level == 1:
-                heading.runs[0].font.size = Pt(12)
-                heading.runs[0].font.bold = True
-                heading.runs[0].font.underline = True
-            elif level == 2:
-                heading.runs[0].font.size = Pt(12)
-                heading.runs[0].font.bold = True
-            else:
-                heading.runs[0].font.size = Pt(11)
-                heading.runs[0].font.bold = True
-                
-        elif element.name == 'p':
-            # Regular paragraphs
-            process_element_text(element)
-                    
-        elif element.name in ['ul', 'ol']:
-            # Lists
-            for li in element.find_all('li', recursive=False):
-                para = doc.add_paragraph(li.get_text().strip(), style='List Bullet' if element.name == 'ul' else 'List Number')
-                para.runs[0].font.name = 'Arial'
-                para.runs[0].font.size = Pt(11)
-                
-        elif element.name == 'table':
-            # Tables
-            rows = element.find_all('tr')
-            if rows:
-                table = doc.add_table(rows=len(rows), cols=len(rows[0].find_all(['th', 'td'])))
-                table.style = 'Table Grid'
-                
-                for i, row in enumerate(rows):
-                    cells = row.find_all(['th', 'td'])
-                    for j, cell in enumerate(cells):
-                        table_cell = table.cell(i, j)
-                        
-                        # Clear default paragraphs
-                        for p in table_cell.paragraphs[1:]:
-                            p._element.getparent().remove(p._element)
-                        
-                        cell_para = table_cell.paragraphs[0]
-                        cell_run = cell_para.add_run(cell.get_text().strip())
-                        cell_run.font.name = 'Arial'
-                        cell_run.font.size = Pt(11)
-                        
-                        if cell.name == 'th':
-                            cell_run.font.bold = True
-    
-    # Generate unique filename
-    filename = f"pdrm_minutes_{uuid.uuid4().hex[:8]}.docx"
-    file_path = DOWNLOAD_DIR / filename
-    
-    logger.info(f"Saving PDRM DOCX to: {file_path.absolute()}")
-    
-    # Save the document
-    doc.save(str(file_path))
-    
-    logger.info(f"PDRM DOCX file exists after save: {file_path.exists()}")
-    
-    return file_path
-
-@app.post("/transcribe")
-async def transcribe_audio(
-    file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = None,
-    max_workers: Optional[int] = Form(default=None),
-    output_path: Optional[str] = Form(default=None),
-    model_name: Optional[str] = Form(default="Whisper"),
-    language: Optional[str] = Form(default="en")
-):
-    """
-    Endpoint to transcribe an uploaded audio file.
-    
-    Args:
-        file: The audio file to transcribe (supported formats: mp3, wav, m4a, mp4, etc.)
-        background_tasks: FastAPI background tasks for cleanup
-        output_path: Optional path where the transcription should be saved
-        max_workers: Number of worker threads to use for concurrent processing
-    
-    Returns:
-        JSON response with the transcription result or error details
-    """
-    logger.info(f"=== MAX_WORKERS DEBUGGING ===")
-    logger.info(f"Parsed max_workers from request: {max_workers}")
-    logger.info(f"Type of max_workers: {type(max_workers)}")
-    logger.info(f"File received: {file.filename}, Content-Type: {file.content_type}")
-    logger.info(f"=============================")
-    # Validate file type
-    allowed_types = ['audio/mpeg', 'audio/wav', 'audio/x-m4a', 'video/mp4', 'audio/mp4']
-    if file.content_type not in allowed_types:
+    jobs = load_data(JOBS_FILE)
+    if request_id not in jobs:
         raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {file.content_type}. Supported types: {', '.join(allowed_types)}"
+            status_code=404,
+            detail="Transcription job not found"
         )
     
-    # Generate unique identifiers for this request
-    request_id = str(uuid.uuid4())
-    temp_upload_path = UPLOAD_DIR / f"{request_id}_{file.filename}"
-    temp_output_path = TRANSCRIPTION_DIR / f"{request_id}_{file.filename}_transcription.txt"
-    
-    # Initialize progress tracking
-    progress_store[request_id] = {
-        "status": "initializing",
-        "message": "Starting transcription...",
-        "percentage": 0,
-        "completed": False
+    job = jobs[request_id]
+    return {
+        "status": job["status"],
+        "progress": job["progress"],
+        "message": job["message"]
     }
-    
-    try:
-        # Update progress - file upload
-        progress_store[request_id].update({
-            "status": "uploading",
-            "message": "Saving uploaded file...",
-            "percentage": 10
-        })
-        
-        # Save uploaded file
-        with open(temp_upload_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        logger.info(f"File saved: {temp_upload_path}")
-        
-        # Update progress - starting transcription
-        progress_store[request_id].update({
-            "status": "processing",
-            "message": "Processing audio file...",
-            "percentage": 20
-        })
-        
-        # Use provided output_path or default to generated path
-        final_output_path = Path(output_path) if output_path else temp_output_path
-        
-        # Update progress - transcribing
-        progress_store[request_id].update({
-            "status": "transcribing",
-            "message": "Transcribing audio segments...",
-            "percentage": 30
-        })
-        
-        # Start background task to monitor progress
-        import threading
-        import time
-        
-        def monitor_progress():
-            start_time = time.time()
-            # Estimate total time based on file size (rough estimate)
-            file_size_mb = temp_upload_path.stat().st_size / (1024 * 1024)
-            estimated_duration = max(30, min(300, file_size_mb * 5))  # 5 seconds per MB, min 30s, max 300s
-            
-            while request_id in progress_store and not progress_store[request_id].get('completed', False):
-                elapsed = time.time() - start_time
-                if elapsed >= estimated_duration:
-                    break
-                    
-                # Calculate progress (30% to 95% during transcription)
-                progress_pct = 30 + (elapsed / estimated_duration) * 65
-                progress_pct = min(95, progress_pct)
-                
-                progress_store[request_id].update({
-                    "status": "transcribing",
-                    "message": f"Transcribing audio segments... ({elapsed:.0f}s elapsed)",
-                    "percentage": progress_pct
-                })
-                time.sleep(2)  # Update every 2 seconds
-                
-        # Start monitoring thread
-        monitor_thread = threading.Thread(target=monitor_progress)
-        monitor_thread.daemon = True
-        monitor_thread.start()
-        
-        # Transcribe the audio file
-        transcription = transcriber.transcribe_file(
-            audio_path=str(temp_upload_path),
-            output_path=str(final_output_path),
-            max_workers=max_workers,
-            model_name=model_name,
-            language=language
+
+@app.get("/transcripts/{transcript_id}")
+async def get_transcript(transcript_id: str):
+    transcripts = load_data(TRANSCRIPTS_FILE)
+    if transcript_id not in transcripts:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found"
         )
-        
-        # Final progress update
-        progress_store[request_id].update({
-            "status": "completed",
-            "message": "Transcription completed successfully!",
-            "percentage": 100,
-            "completed": True
-        })
-        
-        # Return the transcription result
-        return JSONResponse({
-            "request_id": request_id,
-            "filename": file.filename,
-            "content_type": file.content_type,
-            "transcription": transcription,
-            "output_path": str(final_output_path)
-        })
-        
-    except FileNotFoundError as e:
-        logger.error(f"File not found error: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"File not found: {str(e)}")
-        
-    except Exception as e:
-        logger.error(f"Transcription failed: {str(e)}")
-        # Update progress with error
-        if request_id and request_id in progress_store:
-            progress_store[request_id].update({
-                "status": "error",
-                "message": f"Transcription failed: {str(e)}",
-                "percentage": 0,
-                "completed": True,
-                "error": True
-            })
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
-        
-    finally:
-        # Add cleanup task to remove uploaded file
-        if background_tasks:
-            #background_tasks.add_task(remove_file, temp_upload_path)
-            # Also clean up the transcription file if it was saved in our directory
-            #if str(final_output_path).startswith(str(TRANSCRIPTION_DIR)):
-            #    background_tasks.add_task(remove_file, final_output_path)
-            pass
-         
-def remove_file(file_path: Path):
-    """
-    Helper function to remove a file.
-    """
-    try:
+    
+    return transcripts[transcript_id]
+
+@app.put("/transcripts/{transcript_id}")
+async def update_transcript(transcript_id: str, update: TranscriptUpdate):
+    transcripts = load_data(TRANSCRIPTS_FILE)
+    if transcript_id not in transcripts:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found"
+        )
+    
+    transcripts[transcript_id]["text"] = update.text
+    save_data(TRANSCRIPTS_FILE, transcripts)
+    return transcripts[transcript_id]
+
+@app.delete("/transcripts/{transcript_id}")
+async def delete_transcript(transcript_id: str):
+    transcripts = load_data(TRANSCRIPTS_FILE)
+    if transcript_id not in transcripts:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found"
+        )
+    
+    # Delete transcript
+    del transcripts[transcript_id]
+    save_data(TRANSCRIPTS_FILE, transcripts)
+    
+    # Delete associated job if exists
+    jobs = load_data(JOBS_FILE)
+    if transcript_id in jobs:
+        del jobs[transcript_id]
+        save_data(JOBS_FILE, jobs)
+    
+    # Delete associated file if exists
+    uploads = load_data(UPLOADS_FILE)
+    if transcript_id in uploads:
+        file_info = uploads[transcript_id]
+        file_path = Path(file_info["path"])
         if file_path.exists():
             file_path.unlink()
-            logger.info(f"Cleaned up file: {file_path}")
-    except Exception as e:
-        logger.error(f"Failed to clean up file {file_path}: {str(e)}")
+        del uploads[transcript_id]
+        save_data(UPLOADS_FILE, uploads)
+    
+    return {"message": "Transcript deleted successfully"}
 
-@app.post("/completion")
-async def completion_api(messages: list = Body(...)):
-    """
-    API endpoint to handle chat completion requests with progress tracking.
-    
-    Args:
-        messages: List of message objects with role and content
-        
-    Returns:
-        JSON response with the completion text and request_id for progress tracking
-    """
-    # Generate request ID for progress tracking
-    request_id = str(uuid.uuid4())
-    
-    # Initialize progress tracking
-    progress_store[request_id] = {
-        "status": "initializing",
-        "message": "Preparing AI request...",
-        "percentage": 0,
-        "completed": False
-    }
-    
+@app.post("/generate-report")
+async def generate_report(request: GenerateReportRequest):
     try:
-        # Update progress - start processing
-        progress_store[request_id].update({
-            "status": "processing",
-            "message": "Sending request to AI model...",
-            "percentage": 20
-        })
+        logger.info(f"Received report generation request for transcript ID: {request.transcript_id}")
         
-        # Log the request to LLM model
-        logger.info(f"Sending completion request to LLM model with {len(messages)} messages")
+        # Check if transcript exists
+        transcripts = load_data(TRANSCRIPTS_FILE)
+        if request.transcript_id not in transcripts:
+            raise HTTPException(
+                status_code=404,
+                detail="Transcript not found"
+            )
+
+        # Generate unique report ID
+        report_id = str(uuid.uuid4())
         
-        # Update progress - waiting for response
-        progress_store[request_id].update({
-            "status": "waiting",
-            "message": "Waiting for AI response...",
-            "percentage": 40
-        })
+        # Save report job info
+        reports = load_data(REPORTS_FILE)
+        reports[report_id] = {
+            "id": report_id,  # Add ID to the report data
+            "status": "pending",
+            "transcript_id": request.transcript_id,
+            "prompt": request.prompt,
+            "title": request.title,
+            "progress": 0,
+            "message": "Memulakan penjanaan laporan...",
+            "created_at": datetime.now().isoformat()
+        }
+        save_data(REPORTS_FILE, reports)
         
-        # Add system prompt for PDRM meeting minutes conversion
-        system_prompt = {
-            "role": "system",
-            "content": """Convert the meeting transcript into a clean PDRM meeting minutes document in Bahasa Malaysia.
-
-Start with header information (COMPULSARY):
-[Produce detailed meeting title from context]
-Rujukan: [Generate reference like PDRM/MM/2025/001]
-Bil. Mesyuarat: [Infer number like 1/2025]
-Tarikh: [Extract or infer date]
-Masa: [Extract meeting duration]
-Tempat: [Extract location]
-
-Then provide content sections:
-
-## KEHADIRAN
-[Name/Title] (Pengerusi) [Hadir]
-[Name/Title] [Hadir/Tidak Hadir]
-
-Then these are all the agenda for the meeting, from start to end.
-## [EXTRACT TOPIC]
-
-For each agenda ONLY, NOT EACH ITEMS AND SUBPOINTS, classify correctly:
-- **[Makluman]** - ONLY for pure information with no action required
-- **[Specific Person/Department]** - For ALL action items, identify WHO is responsible. No need to put the word "Tindakan:"
-- **[Perbincangan]** - For ongoing discussions needing follow-up
-
-Example:
-18. Sokongan Rekabentuk & Dokumentasi
-1. RFI sedia:
-1.1. Berkongsi panduan pemilihan antena
-1.2. Kertas teknikal (technical paper)
-1.3. Bantuan rekabentuk sistem baru
-2. Sokongan berterusan untuk pasukan kejuruteraan PDRM.
-
-**[RFI / Hock Goh]**
-
-CRITICAL: For action items like training, follow-ups, implementations - ALWAYS specify the responsible party, never use [Makluman].
-
-Examples:
-✅ Attend refresher course [Pegawai Ahmad]
-✅ Submit report by Friday [MCSB]
-✅ Schedule follow-up meeting [Ketua Unit]
-❌ Training required [Makluman] ← WRONG
-
-List all items in detail. Use 1 2 3 for number
-Use sub-numbering (1.1.1, 1.1.2) for subitems.
-
-At the end of it:
-## PENUTUP
-1. Mesyuarat ditangguhkan pada [time]
-2. Disediakan oleh: [name]
-3. Disemak oleh: [name]
-
-Output the structured content in detail with explanatory for each subunits."""
+        # Start report generation in a background thread
+        thread = threading.Thread(target=process_report_generation, args=(report_id,))
+        thread.daemon = True
+        thread.start()
+        
+        logger.info(f"Created report generation job: {report_id}")
+        
+        return {
+            "report_id": report_id,
+            "message": "Report generation started"
         }
         
-        # Prepare messages with system prompt
-        formatted_messages = [system_prompt] + messages
+    except HTTPException as e:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Report generation error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start report generation: {str(e)}"
+        )
 
-        # Send request to LLM model
-        llm_response = requests.post(
-            LLM_ADDRESS,
-            json={
-                "model": LLM_MODEL,
-                "messages": formatted_messages
+@app.get("/reports/{report_id}/progress")
+async def get_report_progress(report_id: str):
+    reports = load_data(REPORTS_FILE)
+    if report_id not in reports:
+        raise HTTPException(
+            status_code=404,
+            detail="Report not found"
+        )
+    
+    report = reports[report_id]
+    return {
+        "status": report["status"],
+        "progress": report["progress"],
+        "message": report["message"]
+    }
+
+@app.get("/reports/{report_id}")
+async def get_report(report_id: str):
+    reports = load_data(REPORTS_FILE)
+    if report_id not in reports:
+        raise HTTPException(
+            status_code=404,
+            detail="Report not found"
+        )
+    
+    report = reports[report_id]
+    if report["status"] != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail="Report is not ready yet"
+        )
+    
+    file_path = Path(report["file_path"])
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Report file not found"
+        )
+    
+    return FileResponse(
+        path=file_path,
+        filename=f"{report['title']}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+@app.get("/reports")
+async def list_reports():
+    reports = load_data(REPORTS_FILE)
+    return [
+        {**report, "id": report_id}  # Add ID to each report
+        for report_id, report in reports.items()
+    ]
+
+@app.delete("/reports/{report_id}")
+async def delete_report(report_id: str):
+    reports = load_data(REPORTS_FILE)
+    if report_id not in reports:
+        raise HTTPException(
+            status_code=404,
+            detail="Report not found"
+        )
+    
+    report = reports[report_id]
+    
+    # Delete report file if exists
+    if "file_path" in report:
+        file_path = Path(report["file_path"])
+        if file_path.exists():
+            file_path.unlink()
+    
+    # Delete report record
+    del reports[report_id]
+    save_data(REPORTS_FILE, reports)
+    
+    return {"message": "Report deleted successfully"}
+
+@app.post("/logout")
+async def logout():
+    logger.info("User logged out")
+    return {"message": "Successfully logged out"}
+
+@app.get("/statistics")
+async def get_statistics():
+    """Get comprehensive system statistics."""
+    try:
+        users = load_data(USERS_FILE)
+        uploads = load_data(UPLOADS_FILE)
+        transcripts = load_data(TRANSCRIPTS_FILE)
+        jobs = load_data(JOBS_FILE)
+        reports = load_data(REPORTS_FILE)
+        
+        # Calculate basic counts
+        total_users = len(users)
+        total_audio_files = len(uploads)
+        total_transcripts = len(transcripts)
+        total_reports = len(reports)
+        
+        # Calculate transcript status breakdown
+        transcript_statuses = {}
+        for job_id, job in jobs.items():
+            status = job.get('status', 'unknown')
+            transcript_statuses[status] = transcript_statuses.get(status, 0) + 1
+            
+        # Calculate report status breakdown
+        report_statuses = {}
+        for report_id, report in reports.items():
+            status = report.get('status', 'unknown')
+            report_statuses[status] = report_statuses.get(status, 0) + 1
+        
+        # Calculate monthly user registrations for the last 12 months
+        import calendar
+        
+        monthly_registrations = {}
+        current_date = datetime.now()
+        
+        for i in range(12):
+            # Calculate the month/year for i months ago
+            target_date = current_date - timedelta(days=i*30)
+            month_key = target_date.strftime("%Y-%m")
+            month_name = f"{calendar.month_name[target_date.month]} {target_date.year}"
+            monthly_registrations[month_key] = {
+                "month": month_name,
+                "count": 0,
+                "users": []
             }
-        )
         
-        # Update progress - processing response
-        progress_store[request_id].update({
-            "status": "processing_response",
-            "message": "Processing AI response...",
-            "percentage": 80
-        })
+        # Count user registrations by month
+        for username, user_data in users.items():
+            created_at = user_data.get('created_at', '2024-01-01')
+            try:
+                user_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                month_key = user_date.strftime("%Y-%m")
+                if month_key in monthly_registrations:
+                    monthly_registrations[month_key]["count"] += 1
+                    monthly_registrations[month_key]["users"].append({
+                        "username": username,
+                        "full_name": user_data.get('full_name', ''),
+                        "email": user_data.get('email', ''),
+                        "created_at": created_at
+                    })
+            except:
+                pass
         
-        # Log the response status
-        logger.info(f"LLM response status: {llm_response.status_code}")
-        logger.info(f"LLM response text: {llm_response.text[:500]}...")  # Log first 500 chars
+        # Calculate recent activity (last 30 days)
+        recent_uploads = 0
+        recent_transcripts = 0
+        recent_reports = 0
         
-        llm_response.raise_for_status()
-        llm_data = llm_response.json()
+        thirty_days_ago = datetime.now() - timedelta(days=30)
         
-        # Extract response text from chat completions response
-        response_text = llm_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        for upload_id, upload in uploads.items():
+            try:
+                file_path = Path(upload.get('path', ''))
+                if file_path.exists():
+                    file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
+                    if file_time > thirty_days_ago:
+                        recent_uploads += 1
+            except:
+                pass
         
-        # Final progress update
-        progress_store[request_id].update({
-            "status": "completed",
-            "message": "AI processing completed!",
-            "percentage": 100,
-            "completed": True
-        })
-        
-        return JSONResponse({
-            "request_id": request_id,
-            "text": response_text
-        })
-        
-    except Exception as e:
-        # Update progress with error
-        progress_store[request_id].update({
-            "status": "error",
-            "message": f"AI processing failed: {str(e)}",
-            "percentage": 0,
-            "completed": True,
-            "error": True
-        })
-        raise HTTPException(status_code=500, detail=f"Completion failed: {str(e)}")
-
-# New PDRM Minutes functionality
-# Enhanced regex patterns for better action item detection
-TINDAKAN_RE = re.compile(r'\bTindakan\s*:\s*([^.|;<>\n]+)', re.IGNORECASE)
-ACTION_KEYWORDS_RE = re.compile(r'\b(?:perlu|harus|wajib|akan|hendak|mesti|kena|patut)\s+([^.|;<>\n]*(?:oleh|kepada|daripada)\s+([^.|;<>\n]+))', re.IGNORECASE)
-RESPONSIBLE_PARTY_RE = re.compile(r'\b(?:oleh|kepada|daripada)\s+([^.|;<>\n,]+)', re.IGNORECASE)
-
-def extract_metadata_from_content(md_text: str) -> dict:
-    """Extract meeting metadata from AI-generated content."""
-    lines = md_text.split('\n')
-    metadata = {}
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+        for job_id, job in jobs.items():
+            recent_transcripts += 1 if job.get('status') == 'completed' else 0
             
-        # Extract title - look for lines starting with # or **
-        if line.startswith('#') and ('minit' in line.lower() or 'mesyuarat' in line.lower()):
-            # Remove # markers and get the title
-            title = line.lstrip('#').strip()
-            metadata['title_text'] = title
-        elif line.startswith('**') and line.endswith('**') and ('minit' in line.lower() or 'mesyuarat' in line.lower()):
-            # Remove ** markers and get the title
-            title = line.strip('*').strip()
-            metadata['title_text'] = title
-        elif line.startswith('MINIT MESYUARAT'):
-            # Direct title line
-            metadata['title_text'] = line
+        for report_id, report in reports.items():
+            try:
+                created_at = report.get('created_at', '')
+                if created_at:
+                    report_date = datetime.fromisoformat(created_at)
+                    if report_date > thirty_days_ago:
+                        recent_reports += 1
+            except:
+                pass
         
-        # Extract metadata fields
-        if line.lower().startswith('rujukan:'):
-            metadata['rujukan'] = line.split(':', 1)[1].strip()
-        elif line.lower().startswith('bil. mesyuarat:') or line.lower().startswith('bil mesyuarat:'):
-            metadata['bil'] = line.split(':', 1)[1].strip()
-        elif line.lower().startswith('tarikh:'):
-            metadata['tarikh'] = line.split(':', 1)[1].strip()
-        elif line.lower().startswith('masa:'):
-            metadata['masa'] = line.split(':', 1)[1].strip()
-        elif line.lower().startswith('tempat:'):
-            metadata['tempat'] = line.split(':', 1)[1].strip()
-    
-    # Don't set default title - let AI generate it completely
-    return metadata
-
-def remove_title_from_content(md_text: str) -> str:
-    """Remove title lines from markdown content to prevent duplication in PDRM template."""
-    lines = md_text.split('\n')
-    filtered_lines = []
-    
-    for line in lines:
-        line_stripped = line.strip()
-        
-        # Skip title lines - look for lines starting with # or ** that contain meeting-related words
-        if line_stripped.startswith('#') and ('minit' in line_stripped.lower() or 'mesyuarat' in line_stripped.lower()):
-            continue
-        elif line_stripped.startswith('**') and line_stripped.endswith('**') and ('minit' in line_stripped.lower() or 'mesyuarat' in line_stripped.lower()):
-            continue
-        elif line_stripped.startswith('MINIT MESYUARAT'):
-            continue
-        else:
-            filtered_lines.append(line)
-    
-    return '\n'.join(filtered_lines)
-
-def strip_sections(md_text: str) -> str:
-    """Remove unwanted sections, metadata, and preamble from markdown text, keeping only the content."""
-    lines = md_text.split('\n')
-    filtered_lines = []
-    skip_section = False
-    in_preamble = True
-    
-    for line in lines:
-        line_stripped = line.strip()
-        
-        # Skip completely empty lines in preamble
-        if in_preamble and not line_stripped:
-            continue
-            
-        # Skip preamble content (introductory text before actual content)
-        if in_preamble and (
-            line_stripped.startswith('MINIT MESYUARAT') or
-            line_stripped.lower().startswith('rujukan:') or
-            line_stripped.lower().startswith('bil.') or
-            line_stripped.lower().startswith('tarikh:') or
-            line_stripped.lower().startswith('masa:') or
-            line_stripped.lower().startswith('tempat:') or
-            line_stripped == '---' or
-            'berikut adalah' in line_stripped.lower() or
-            'structured and cleaned' in line_stripped.lower() or
-            'here is a' in line_stripped.lower() or
-            'telah dianalisis' in line_stripped.lower() or
-            'format minit mesyuarat' in line_stripped.lower() or
-            'official meeting minutes' in line_stripped.lower() or
-            'markdown' in line_stripped.lower() or
-            line_stripped.startswith('**') and any(word in line_stripped.lower() for word in ['rujukan', 'tarikh', 'masa', 'tempat', 'berikut', 'structured']) or
-            'preserve' in line_stripped.lower() or
-            'timestamp' in line_stripped.lower()
-        ):
-            continue
-        
-        # End of preamble when we hit first proper heading (# KEHADIRAN, # AGENDA, etc.)
-        if line_stripped.startswith('#'):
-            in_preamble = False
-        
-        # Check if this line starts a section we want to skip (signatures, etc.)
-        line_lower = line_stripped.lower()
-        if any(keyword in line_lower for keyword in ['disediakan', 'disemak', 'disahkan']):
-            if line_stripped.startswith('#') or line_stripped.startswith('**'):
-                skip_section = True
-                continue
-        
-        # Reset skip if we hit a new section
-        if line_stripped.startswith('#') and skip_section:
-            skip_section = False
-        
-        if not skip_section and not in_preamble:
-            filtered_lines.append(line)
-    
-    return '\n'.join(filtered_lines)
-
-def _li_depth(li):
-    """Calculate the depth of a list item."""
-    depth = 0
-    p = li.parent
-    while p and p.name in ("ul", "ol"):
-        depth += 1
-        p = p.parent
-    # depth includes li's own list, so top-level becomes 1
-    return max(0, depth - 1)
-
-def _extract_number(li, idx):
-    """Return numbering like '1.' for top-level ordered lists, else bullet index."""
-    # If parent is <ol>, try to use its numbering; otherwise show '•'
-    if li.parent and li.parent.name == 'ol':
-        start = li.parent.get('start')
-        try:
-            base = int(start) if start else 1
-        except:
-            base = 1
-        return f"{base + idx}."
-    return "•"
-
-def minutes_markdown_to_wrapped_html(md_text: str) -> str:
-    """Convert markdown to HTML with PDRM item formatting."""
-    raw_html = md_to_html(md_text, extensions=['tables'])
-    soup = BeautifulSoup(raw_html, "html.parser")
-
-    # Style markdown tables
-    for tbl in soup.find_all("table"):
-        tbl['class'] = (tbl.get('class', []) + ['md'])
-
-    out = []
-
-    def emit_header(tag):
-        # Keep original heading tags; CSS handles sizes (H1/H2/H3)
-        out.append(f'<div class="section">{str(tag)}</div>')
-
-    def emit_item(no, text_html, tag, depth):
-        depth_cls = f" sub{depth}" if depth > 0 else ""
-        out.append(
-            f'<div class="item{depth_cls}">'
-            f'<div class="no">{no}</div>'
-            f'<div class="text">{text_html}</div>'
-            f'<div class="tag">{tag}</div>'
-            f'</div>'
-        )
-
-    # Walk through top-level nodes and convert lists into .item rows
-    for node in list(soup.children):
-        if not getattr(node, 'name', None):
-            # strings outside blocks
-            continue
-
-        if node.name in ('h1','h2','h3','h4','h5','h6','p','table','blockquote'):
-            emit_header(node) if node.name.startswith('h') else out.append(str(node))
-            continue
-
-        if node.name in ('ul','ol'):
-            # expand all li (including nested)
-            def walk_list(lst):
-                lis = lst.find_all('li', recursive=False)
-                for idx, li in enumerate(lis):
-                    # Get full text content
-                    li_html = ''.join(str(c) for c in li.contents)
-                    li_text = li.get_text()
-                    
-                    # Extract explicit tindakan
-                    m = TINDAKAN_RE.search(li_html)
-                    if m:
-                        tag = m.group(1).strip()
-                        li_html = TINDAKAN_RE.sub('', li_html, count=1).strip()
-                        final_tag = f"Tindakan: {tag}"
-                    else:
-                        # Intelligent action detection
-                        tag = detect_action_item(li_text)
-                        final_tag = f"Tindakan: {tag}" if tag != "Makluman" else "Makluman"
-
-                    # depth and number
-                    depth = _li_depth(li)
-                    no = _extract_number(li, idx)
-
-                    # split out any nested lists for separate processing
-                    sublists = li.find_all(['ul','ol'], recursive=False)
-                    for s in sublists:
-                        s.extract()
-
-                    # remaining text for this li
-                    text_html = li_html
-
-                    emit_item(no, text_html, final_tag, depth)
-
-                    # now render sublists
-                    for s in sublists:
-                        walk_list(s)
-
-            walk_list(node)
-            continue
-
-        # default passthrough (rare)
-        out.append(str(node))
-
-    body = '\n'.join(out)
-    return body
-
-def detect_action_item(text: str) -> str:
-    """Detect if text contains action items and extract responsible party."""
-    text_lower = text.lower()
-    
-    # Past tense or completed actions - usually just informational
-    completed_indicators = [
-        'telah', 'sudah', 'selesai', 'berjaya', 'completed', 'done', 'finished',
-        'disolder', 'dikemas kini', 'diubah', 'dilakukan', 'dijalankan', 'di-restart',
-        'berfungsi', 'semula', 'normal', 'rosak', 'diperbaiki'
-    ]
-    
-    # Check if it's describing something that already happened (informational)
-    if any(indicator in text_lower for indicator in completed_indicators):
-        return "Makluman"
-    
-    # Clear informational phrases
-    info_phrases = [
-        'memberitahu', 'melaporkan', 'menjelaskan', 'dimaklumkan',
-        'dijelaskan', 'dipersembahkan', 'dinyatakan', 'memaklumkan',
-        'hasil', 'keputusan', 'ujian', 'testing', 'paparan'
-    ]
-    
-    if any(phrase in text_lower for phrase in info_phrases):
-        return "Makluman"
-    
-    # Look for explicit responsible parties - people's names
-    # Common Malaysian names (extract actual names, not technical terms)
-    name_patterns = [
-        r'\b(hafiz|ahmad|ali|siti|nur|mohammed|muhammad|abdul|syafiq|afin|encik|puan)\b',
-        r'\b(?:encik|puan|dato|datuk|dr\.?)\s+([a-z]+)\b'
-    ]
-    
-    for pattern in name_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            if len(match.groups()) > 1:
-                return "Encik " + match.group(2).title()
-            else:
-                return match.group(1).title()
-    
-    # Look for organizational responsibility
-    org_patterns = [
-        r'\bpihak\s+(syarikat|vendor|contractor|pembekal)\b',
-        r'\b(syarikat|vendor|contractor|pembekal)\s+([a-z\s]+)\b'
-    ]
-    
-    for pattern in org_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            if len(match.groups()) > 1:
-                return "Pihak " + match.group(2).title()
-            else:
-                return "Pihak " + match.group(1).title()
-    
-    # Look for departments
-    departments = ['pdrm', 'mcsb', 'jabatan', 'bahagian', 'unit']
-    for dept in departments:
-        if dept in text_lower:
-            return dept.upper()
-    
-    # Future actions requiring responsibility
-    future_action_indicators = [
-        'perlu', 'harus', 'wajib', 'akan', 'hendak', 'mesti', 'kena', 'patut',
-        'schedule', 'prepare', 'submit', 'attend', 'follow up', 'implement'
-    ]
-    
-    # Only assign responsibility for future actions, not completed ones
-    if any(indicator in text_lower for indicator in future_action_indicators):
-        # Try to find context about who should do it
-        if 'syarikat' in text_lower or 'vendor' in text_lower:
-            return "Pihak Syarikat"
-        elif 'teknisi' in text_lower or 'jurutera' in text_lower:
-            return "Pihak Teknikal"
-        else:
-            return "Pihak Berkenaan"
-    
-    # Default to informational for everything else
-    return "Makluman"
-
-def render_pdrm_minutes_html(body_html: str, meta: dict, logo_src: str = "") -> str:
-    """Render PDRM minutes using the template."""
-    template = templates.get_template("pdrm_minutes.html")
-    
-    context = {
-        "body_html": body_html,
-        "logo_src": logo_src,
-        **meta
-    }
-    
-    return template.render(**context)
-
-def generate_pdrm_pdf(html_content: str) -> Path:
-    """Generate a PDF from PDRM HTML content."""
-    # Generate unique filename
-    filename = f"pdrm_minutes_{uuid.uuid4().hex[:8]}.pdf"
-    file_path = DOWNLOAD_DIR / filename
-    
-    logger.info(f"Saving PDRM PDF to: {file_path.absolute()}")
-    
-    # Set base URL to current working directory for relative paths
-    base_url = Path.cwd().as_uri() + "/"
-    
-    # Convert HTML to PDF with base URL
-    HTML(string=html_content, base_url=base_url).write_pdf(str(file_path))
-    
-    logger.info(f"PDRM PDF file exists after save: {file_path.exists()}")
-    
-    return file_path
-
-@app.post("/minutes/render")
-async def render_minutes_endpoint(
-    text: str = Form(...),
-    # Metadata will be extracted automatically from AI content
-    footer_text: str = Form(""),
-    logo_path: str = Form("static/asset/logo.png"),
-    output_format: str = Query("pdf", regex="^(pdf|html|docx)$")
-):
-    try:
-        # Extract metadata from AI-generated content
-        extracted_meta = extract_metadata_from_content(text)
-        
-        # Remove title from content to prevent duplication
-        content_without_title = remove_title_from_content(text)
-        
-        # Use simple markdown conversion instead of custom processing
-        body_html = markdown.markdown(content_without_title, extensions=['tables'])
-
-        # Use extracted metadata - no defaults for title
-        meta = {
-            "title_text": extracted_meta.get('title_text', ''),  # Let AI provide the complete title
-            "rujukan": extracted_meta.get('rujukan', ''),
-            "bil": extracted_meta.get('bil', ''),
-            "tarikh": extracted_meta.get('tarikh', ''),
-            "masa": extracted_meta.get('masa', ''),
-            "tempat": extracted_meta.get('tempat', ''),
-            "footer_text": footer_text
+        return {
+            "overview": {
+                "total_users": total_users,
+                "total_audio_files": total_audio_files,
+                "total_transcripts": total_transcripts,
+                "total_reports": total_reports,
+                "recent_uploads": recent_uploads,
+                "recent_transcripts": recent_transcripts,
+                "recent_reports": recent_reports
+            },
+            "transcript_statuses": transcript_statuses,
+            "report_statuses": report_statuses,
+            "monthly_registrations": monthly_registrations,
+            "generated_at": datetime.now().isoformat()
         }
         
-        html = render_pdrm_minutes_html(body_html, meta, logo_src=logo_path)
-
-        if output_format == "html":
-            fname = DOWNLOAD_DIR / f"minutes_{uuid.uuid4().hex[:8]}.html"
-            fname.write_text(html, encoding="utf-8")
-            return JSONResponse({"html_url": f"/downloads/{fname.name}"})
-
-        if output_format == "pdf":
-            pdf_path = generate_pdrm_pdf(html)
-            return JSONResponse({"pdf_url": f"/downloads/{pdf_path.name}"})
-
-        if output_format == "docx":
-            # Use original markdown text directly to avoid HTML parsing issues
-            docx_path = generate_pdrm_docx_from_markdown(content_without_title, meta, logo_path)
-            return JSONResponse({"docx_url": f"/downloads/{docx_path.name}"})
-
     except Exception as e:
-        logger.exception("Minutes render failed")
-        raise HTTPException(status_code=500, detail=f"Minutes render failed: {str(e)}")
+        logger.error(f"Error getting statistics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get statistics: {str(e)}"
+        )
+
+@app.get("/statistics/users/{period}")
+async def get_user_statistics(period: str):
+    """Get detailed user statistics for a specific period."""
+    try:
+        users = load_data(USERS_FILE)
+        
+        if period == "all":
+            filtered_users = users
+        else:
+            try:
+                year_month = period  # Expected format: "2024-11"
+                filtered_users = {}
+                
+                for username, user_data in users.items():
+                    created_at = user_data.get('created_at', '2024-01-01')
+                    try:
+                        user_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        if user_date.strftime("%Y-%m") == year_month:
+                            filtered_users[username] = user_data
+                    except:
+                        pass
+            except:
+                filtered_users = users
+        
+        # Calculate statistics for filtered users
+        user_stats = []
+        for username, user_data in filtered_users.items():
+            user_stats.append({
+                "username": username,
+                "full_name": user_data.get('full_name', ''),
+                "email": user_data.get('email', ''),
+                "created_at": user_data.get('created_at', ''),
+                "last_login": user_data.get('last_login', 'Never')
+            })
+        
+        return {
+            "period": period,
+            "user_count": len(user_stats),
+            "users": user_stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting user statistics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get user statistics: {str(e)}"
+        )
+
+# Root endpoint for testing
+@app.get("/")
+async def root():
+    return {"message": "PDRM Meeting Minutes Assistant API"}
+
+if __name__ == "__main__":
+    print("\nStarting PDRM Meeting Minutes Assistant server...")
+    print("Server will be accessible at:")
+    print("- Local: http://localhost:8080")
+    print("- Network: http://0.0.0.0:8080")
+    print("- API documentation: http://localhost:8080/docs")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8080,
+        reload=True,
+        forwarded_allow_ips="*",  # Trust forwarded headers from proxy
+        proxy_headers=True        # Enable proxy header support
+    )

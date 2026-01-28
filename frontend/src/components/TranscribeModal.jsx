@@ -226,13 +226,16 @@ const TranscribeModal = ({ isOpen, onClose, selectedFile, onTranscribe }) => {
             >
               <VStack spacing={2} align="start">
                 <Text fontSize="sm" fontWeight="600" color="blue.600">
-                  Maklumat Pemprosesan:
+                  Maklumat Pemprosesan (Dipertingkat):
                 </Text>
                 <Text fontSize="xs" color="blue.600">
-                  • Model: Whisper Malaysia (Bahasa Melayu & English)
+                  • Model: Whisper Malaysia - Optimized untuk Malaysia
                 </Text>
                 <Text fontSize="xs" color="blue.600">
-                  • Mod: Pengesanan bahasa automatik
+                  • Mod: Auto-detect campuran English & Bahasa Melayu
+                </Text>
+                <Text fontSize="xs" color="blue.600">
+                  • Sokongan: Kandungan dwibahasa dalam mesyuarat
                 </Text>
                 <Text fontSize="xs" color="blue.600">
                   • Masa pemprosesan: Bergantung pada panjang audio

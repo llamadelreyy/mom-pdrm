@@ -171,13 +171,13 @@ def process_transcription(job_id: str):
         
         # Start transcription
         try:
-            # Transcribe the file
+            # Transcribe the file with time-separated format
             transcription = transcriber.transcribe_file(
                 audio_path=file_path,
                 max_workers=settings["max_workers"],
                 model_name=settings["model_name"],
                 language=settings["language"],
-                format="txt"  # We want plain text output
+                format="timed_txt"  # Use time-separated text output
             )
             
             # Update job status
@@ -217,8 +217,8 @@ async def generate_report_content(transcript_text: str, prompt: str) -> str:
         logger.info(f"Transcript length: {len(transcript_text)}")
         logger.info(f"Prompt length: {len(prompt)}")
 
-        # Create client with more specific timeout settings - increased for LLM processing
-        timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+        # Create client with extended timeout settings for large LLM processing (20B model)
+        timeout = httpx.Timeout(connect=60.0, read=900.0, write=60.0, pool=60.0)
         
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             # Prepare request payload
@@ -226,24 +226,42 @@ async def generate_report_content(transcript_text: str, prompt: str) -> str:
                 "messages": [
                     {
                         "role": "system",
-                        "content": """Anda adalah penulis laporan profesional. Tugas anda adalah menganalisis transkrip yang diberikan
-                        dan membuat laporan berstruktur mengikut format yang diberikan. Laporan tersebut mestilah jelas,
-                        profesional, dan mengikut format yang betul. Gunakan bullet points di mana sesuai."""
+                        "content": """Anda adalah penulis laporan profesional yang berpengalaman dalam membuat minit mesyuarat PDRM.
+                        Tugas anda adalah menganalisis transkrip yang diberikan dan membuat minit mesyuarat yang sangat terperinci,
+                        komprehensif dan mengikut format rasmi PDRM.
+
+                        KEPERLUAN UTAMA:
+                        1. Buat laporan yang SANGAT TERPERINCI - jangan ringkas kandungan
+                        2. Sertakan semua butiran penting dari transkrip
+                        3. JANGAN gunakan simbol * atau ** - tulis dalam format biasa
+                        4. Gunakan format rasmi minit mesyuarat PDRM
+                        5. Sertakan nombor siri untuk setiap perkara yang dibincangkan
+                        6. Buat sub-seksyen yang terperinci untuk setiap topik
+                        7. Sertakan status tindakan yang jelas
+                        8. Pastikan minit mesyuarat mencerminkan keseluruhan perbincangan
+
+                        FORMAT YANG MESTI DIIKUTI:
+                        - Gunakan bullet points (•) untuk senarai
+                        - Gunakan nombor siri (1.1, 1.2, 2.1, 2.2) untuk sub-topik
+                        - Tulis dalam bahasa yang formal dan profesional
+                        - Jangan gunakan markdown formatting seperti ** atau *
+                        - Pastikan setiap seksyen mempunyai kandungan yang substansial"""
                     },
                     {
                         "role": "user",
-                        "content": f"Berikut adalah transkrip:\n\n{transcript_text[:4000]}\n\nSila buat laporan mengikut format ini:\n\n{prompt}"
+                        "content": f"Berikut adalah transkrip:\n\n{transcript_text[:6000]}\n\nSila buat minit mesyuarat yang sangat terperinci mengikut format ini:\n\n{prompt}\n\nPASTIKAN minit mesyuarat yang dihasilkan adalah SANGAT TERPERINCI dengan semua butiran penting dari transkrip. Jangan ringkas atau potong kandungan."
                     }
                 ],
-                "model": "llm_model",
-                "temperature": 0.7,
-                "max_tokens": 2000
+                "model": "gpt-oss:20b",
+                "temperature": 0.3,
+                "max_tokens": 4000
             }
             
             logger.info(f"Request payload prepared, making POST to: {TEXT_API_URL}/chat/completions")
 
             # Make request with detailed error handling
             try:
+                logger.info("Starting POST request to text model...")
                 response = await client.post(
                     f"{TEXT_API_URL}/chat/completions",
                     json=payload,
@@ -254,6 +272,7 @@ async def generate_report_content(transcript_text: str, prompt: str) -> str:
                     }
                 )
                 
+                logger.info("Received response from text model")
                 # Log response status
                 logger.info(f"Text model response status: {response.status_code}")
                 logger.info(f"Response headers: {dict(response.headers)}")
@@ -323,13 +342,14 @@ async def generate_report_content(transcript_text: str, prompt: str) -> str:
 
 def create_docx_report(title: str, prompt: str, content: str) -> Document:
     """Create a DOCX document with the report content."""
+    from docx.shared import Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    import re
+    
     doc = Document()
     
     # Add logo to the top of the document
     try:
-        from docx.shared import Inches
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        
         # Create a paragraph for the logo
         logo_paragraph = doc.add_paragraph()
         logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -358,21 +378,151 @@ def create_docx_report(title: str, prompt: str, content: str) -> Document:
     title_para = doc.add_heading(f"{title}", 0)
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # Add content directly without showing the prompt
-    # Split content by lines and add them to document
-    for line in content.split('\n'):
-        if line.strip():
-            # Check if line is a heading (starts with #)
-            if line.startswith('#'):
-                level = line.count('#')
-                text = line.strip('#').strip()
-                doc.add_heading(text, level)
-            else:
-                # Check if line is a bullet point
-                if line.strip().startswith('- ') or line.strip().startswith('* '):
-                    doc.add_paragraph(line.strip('- ').strip('* '), style='List Bullet')
-                else:
-                    doc.add_paragraph(line)
+    # Numbering tracking variables
+    main_section_counter = 0
+    sub_section_counter = 0
+    current_main_section = 0
+    
+    def parse_markdown_line(line: str, paragraph):
+        """Parse a line for markdown formatting and apply to Word document."""
+        if not line.strip():
+            return
+            
+        # Handle bold text with **
+        parts = re.split(r'(\*\*.*?\*\*)', line)
+        
+        for part in parts:
+            if part.startswith('**') and part.endswith('**'):
+                # Bold text - remove ** markers and make bold
+                text = part[2:-2]
+                if text:
+                    run = paragraph.add_run(text)
+                    run.bold = True
+            elif part:
+                # Regular text
+                paragraph.add_run(part)
+    
+    def add_formatted_paragraph(text: str, style=None):
+        """Add a paragraph with markdown formatting."""
+        para = doc.add_paragraph(style=style)
+        parse_markdown_line(text, para)
+        return para
+    
+    def fix_numbering_in_text(text: str):
+        """Fix hierarchical numbering in the text content."""
+        nonlocal main_section_counter, sub_section_counter, current_main_section
+        
+        # Pattern to match existing numbering like "1. 1." or "3. 1." etc.
+        main_section_pattern = r'^(\d+)\.\s+'
+        sub_section_pattern = r'^(\d+)\.\s*(\d+)\.\s+'
+        
+        # Check if it's a sub-section (like "1. 1." or "3. 1.")
+        sub_match = re.match(sub_section_pattern, text)
+        if sub_match:
+            main_num = int(sub_match.group(1))
+            if main_num != current_main_section:
+                current_main_section = main_num
+                sub_section_counter = 0
+            sub_section_counter += 1
+            # Replace with proper hierarchical numbering
+            fixed_text = re.sub(sub_section_pattern, f'{current_main_section}.{sub_section_counter} ', text)
+            return fixed_text
+        
+        # Check if it's a main section (just "1." or "2." etc.)
+        main_match = re.match(main_section_pattern, text)
+        if main_match:
+            main_section_counter += 1
+            current_main_section = main_section_counter
+            sub_section_counter = 0
+            # Replace with proper main section numbering
+            fixed_text = re.sub(main_section_pattern, f'{main_section_counter}. ', text)
+            return fixed_text
+        
+        return text
+    
+    # Split content by lines and process
+    lines = content.split('\n')
+    i = 0
+    
+    while i < len(lines):
+        line = lines[i].strip()
+        
+        if not line:
+            # Empty line - add spacing
+            doc.add_paragraph()
+            i += 1
+            continue
+        
+        # Check for headers (lines ending with multiple dashes)
+        if i + 1 < len(lines) and lines[i + 1].strip().startswith('---'):
+            # This is a header
+            header_para = doc.add_heading(line, level=1)
+            header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            i += 2  # Skip the line and the dashes
+            continue
+        
+        # Check for markdown headers (starting with #)
+        if line.startswith('#'):
+            level = min(line.count('#'), 3)  # Limit to 3 levels
+            text = line.strip('#').strip()
+            doc.add_heading(text, level=level)
+            i += 1
+            continue
+        
+        # Check for bullet points with nested spaces (&nbsp;&nbsp;•)
+        if line.startswith('&nbsp;&nbsp;•') or line.startswith('  •') or line.startswith('\t•'):
+            # Nested bullet point
+            bullet_text = re.sub(r'^(&nbsp;)*\s*•\s*', '', line).strip()
+            para = doc.add_paragraph(style='List Bullet 2')  # Nested bullet style
+            parse_markdown_line(bullet_text, para)
+            i += 1
+            continue
+        
+        # Check for bullet points
+        if line.startswith('• ') or line.startswith('- ') or line.startswith('* '):
+            bullet_text = line[2:].strip()
+            para = doc.add_paragraph(style='List Bullet')
+            parse_markdown_line(bullet_text, para)
+            i += 1
+            continue
+        
+        # Fix numbering and check for numbered lists
+        fixed_line = fix_numbering_in_text(line)
+        if re.match(r'^\d+\.\d+\s', fixed_line):
+            # Sub-section numbering (e.g., "1.1", "2.3")
+            list_text = re.sub(r'^\d+\.\d+\s*', '', fixed_line)
+            para = doc.add_paragraph()
+            # Add the number as bold
+            number_part = re.match(r'^(\d+\.\d+)\s*', fixed_line).group(1)
+            run = para.add_run(f"{number_part}. ")
+            run.bold = True
+            # Add the rest of the text
+            parse_markdown_line(list_text, para)
+            i += 1
+            continue
+        elif re.match(r'^\d+\.\s', fixed_line):
+            # Main section numbering (e.g., "1.", "2.")
+            list_text = re.sub(r'^\d+\.\s*', '', fixed_line)
+            para = doc.add_heading(list_text, level=2)
+            # Add manual numbering to the heading
+            number_part = re.match(r'^(\d+)\.\s*', fixed_line).group(1)
+            para.text = f"{number_part}. {para.text}"
+            i += 1
+            continue
+        
+        # Check for definition lists (starts with capital letter followed by number)
+        if re.match(r'^[A-Z]+\.\d+', line):
+            para = doc.add_paragraph()
+            parse_markdown_line(line, para)
+            # Make the section identifier bold
+            if para.runs:
+                para.runs[0].bold = True
+            i += 1
+            continue
+        
+        # Regular paragraph
+        add_formatted_paragraph(fixed_line if fixed_line != line else line)
+        i += 1
     
     return doc
 

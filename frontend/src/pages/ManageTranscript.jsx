@@ -19,6 +19,10 @@ import {
   AlertDialogHeader,
   AlertDialogContent,
   AlertDialogOverlay,
+  HStack,
+  Badge,
+  Icon,
+  Text,
 } from '@chakra-ui/react';
 import TranscriptTable from '../components/TranscriptTable';
 import ReportModal from '../components/ReportModal';
@@ -311,27 +315,88 @@ const ManageTranscript = () => {
         }}
       />
 
-      <Modal isOpen={isEditOpen} onClose={onEditClose} size="xl">
+      <Modal isOpen={isEditOpen} onClose={onEditClose} size="6xl">
         <ModalOverlay />
-        <ModalContent>
+        <ModalContent maxH="90vh">
           <ModalHeader>Sunting Transkrip</ModalHeader>
           <ModalCloseButton />
-          <ModalBody pb={6}>
-            <Textarea
-              value={editingText}
-              onChange={(e) => setEditingText(e.target.value)}
-              size="lg"
-              rows={15}
-            />
-            <Button
-              colorScheme="blue"
-              mr={3}
-              mt={4}
-              onClick={handleSaveEdit}
-            >
-              Simpan
-            </Button>
-            <Button onClick={onEditClose} mt={4}>Batal</Button>
+          <ModalBody pb={6} overflowY="auto">
+            <VStack spacing={4} align="stretch">
+              <Text fontSize="sm" color="gray.500">
+                Transkrip dengan cap masa setiap 30 saat. Anda boleh mengedit teks secara langsung.
+              </Text>
+              <Box
+                maxH="60vh"
+                overflowY="auto"
+                border="1px"
+                borderColor="gray.200"
+                borderRadius="md"
+                p={4}
+                bg="gray.50"
+              >
+                {editingText.split('\n\n').map((segment, index) => {
+                  // Check if segment starts with timestamp
+                  const timestampMatch = segment.match(/^\[(\d{2}:\d{2})\]\s*(.*)$/s);
+                  
+                  if (timestampMatch) {
+                    const [, timestamp, text] = timestampMatch;
+                    return (
+                      <Box key={index} mb={4} border="1px" borderColor="blue.200" borderRadius="md" p={3} bg="white">
+                        <HStack spacing={3} mb={2}>
+                          <Badge colorScheme="blue" fontSize="xs" px={2} py={1}>
+                            {timestamp}
+                          </Badge>
+                        </HStack>
+                        <Textarea
+                          value={text}
+                          onChange={(e) => {
+                            const newSegments = editingText.split('\n\n');
+                            newSegments[index] = `[${timestamp}] ${e.target.value}`;
+                            setEditingText(newSegments.join('\n\n'));
+                          }}
+                          size="sm"
+                          minH="20"
+                          border="none"
+                          p={0}
+                          resize="vertical"
+                          _focus={{ outline: 'none' }}
+                        />
+                      </Box>
+                    );
+                  } else {
+                    // Handle segments without timestamps (fallback)
+                    return (
+                      <Box key={index} mb={4} border="1px" borderColor="gray.200" borderRadius="md" p={3} bg="white">
+                        <Textarea
+                          value={segment}
+                          onChange={(e) => {
+                            const newSegments = editingText.split('\n\n');
+                            newSegments[index] = e.target.value;
+                            setEditingText(newSegments.join('\n\n'));
+                          }}
+                          size="sm"
+                          minH="20"
+                          border="none"
+                          p={0}
+                          resize="vertical"
+                          _focus={{ outline: 'none' }}
+                        />
+                      </Box>
+                    );
+                  }
+                })}
+              </Box>
+              <HStack spacing={3}>
+                <Button
+                  colorScheme="blue"
+                  onClick={handleSaveEdit}
+                  leftIcon={<Icon boxSize={4}>💾</Icon>}
+                >
+                  Simpan
+                </Button>
+                <Button onClick={onEditClose}>Batal</Button>
+              </HStack>
+            </VStack>
           </ModalBody>
         </ModalContent>
       </Modal>

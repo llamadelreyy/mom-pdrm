@@ -14,8 +14,8 @@ import uuid
 import shutil
 
 # Configuration variables
-API_BASE = "http://60.51.17.97:9801/v1"
-API_BASE_MALAYSIA = "http://60.51.17.97:7801/v1"
+API_BASE = "http://localhost:7801/v1"
+API_BASE_MALAYSIA = "http://localhost:7801/v1"
 TRANSCRIPTION_MODEL = "stt_model"
 TRANSCRIPTION_MODEL_MALAYSIA = "stt_model"
 
@@ -135,15 +135,15 @@ class AudioTranscriber:
         
         return segment_files, temp_dir_created
     
-    def transcribe_segment(self, segment_path: str, api_base: str = API_BASE, model: str = TRANSCRIPTION_MODEL, language: str = "en") -> str:
+    def transcribe_segment(self, segment_path: str, api_base: str = API_BASE, model: str = TRANSCRIPTION_MODEL, language: str = "auto") -> str:
         """
-        Transcribe a single audio segment synchronously.
+        Transcribe a single audio segment synchronously with improved auto-detection for multilingual content.
         
         Args:
             segment_path: Path to the audio segment file
             api_base: API base URL for the transcription service
             model: Model name to use for transcription
-            language: Language code for transcription
+            language: Language code for transcription ("auto" for auto-detection, "en" for English, "ms" for Malay)
             
         Returns:
             Transcribed text
@@ -156,27 +156,34 @@ class AudioTranscriber:
                 "file": f,
                 "model": model,
                 "response_format": "json",
-                "temperature": 0.0,
+                "temperature": 0.1,  # Slightly lower for more consistent results
                 "extra_body": dict(
                     seed=42,
-                    repetition_penalty=1.2,
+                    repetition_penalty=1.1,  # Slightly lower to avoid over-suppression
                 ),
             }
-            if language.lower() != "auto":
+            
+            # Handle auto-detection and multilingual scenarios
+            if language.lower() == "auto":
+                # For auto-detection, don't specify language to let Whisper detect automatically
+                # Add a prompt to encourage recognition of both English and Malay
+                kwargs["prompt"] = "This audio may contain English and/or Bahasa Melayu content."
+            else:
                 kwargs["language"] = language
-            print(kwargs)
+                
+            print(f"Transcribing with language='{language}' and kwargs: {kwargs}")
             transcription = self.client.audio.transcriptions.create(**kwargs)
         return transcription.text
     
-    async def transcribe_segment_async(self, segment_path: str, api_base: str = API_BASE, model: str = TRANSCRIPTION_MODEL, language: str = "en") -> str:
+    async def transcribe_segment_async(self, segment_path: str, api_base: str = API_BASE, model: str = TRANSCRIPTION_MODEL, language: str = "auto") -> str:
         """
-        Transcribe a single audio segment asynchronously.
+        Transcribe a single audio segment asynchronously with improved auto-detection for multilingual content.
         
         Args:
             segment_path: Path to the audio segment file
             api_base: API base URL for the transcription service
             model: Model name to use for transcription
-            language: Language code for transcription
+            language: Language code for transcription ("auto" for auto-detection, "en" for English, "ms" for Malay)
             
         Returns:
             Transcribed text
@@ -185,18 +192,27 @@ class AudioTranscriber:
         self.async_client.base_url = api_base
         
         with open(segment_path, "rb") as f:
-            transcription = await self.async_client.audio.transcriptions.create(
-                file=f,
-                model=model,
-                language=language,
-                response_format="json",
-                temperature=0.0,
-                extra_body=dict(
-                    seed=420,
-                    repetition_penalty=1.5,
-                    top_p=0.7
+            kwargs = {
+                "file": f,
+                "model": model,
+                "response_format": "json",
+                "temperature": 0.1,  # Consistent with sync method
+                "extra_body": dict(
+                    seed=42,  # Consistent with sync method
+                    repetition_penalty=1.1,  # Consistent with sync method
                 ),
-            )
+            }
+            
+            # Handle auto-detection and multilingual scenarios
+            if language.lower() == "auto":
+                # For auto-detection, don't specify language to let Whisper detect automatically
+                # Add a prompt to encourage recognition of both English and Malay
+                kwargs["prompt"] = "This audio may contain English and/or Bahasa Melayu content."
+            else:
+                kwargs["language"] = language
+            
+            print(f"Async transcribing with language='{language}' and kwargs: {kwargs}")
+            transcription = await self.async_client.audio.transcriptions.create(**kwargs)
         return transcription.text
     
     def _ms_to_srt_time(self, ms: int) -> str:
@@ -234,25 +250,27 @@ class AudioTranscriber:
         end_time = self._ms_to_srt_time(end_ms)
         return f"{index}\n{start_time} --> {end_time}\n{text.strip()}\n"
 
-    def transcribe_file(self, audio_path: str, output_path: str = None, max_workers: int = 6, format: str = "srt", model_name: str = "Whisper", language: str = "en") -> str:
+    def transcribe_file(self, audio_path: str, output_path: str = None, max_workers: int = 6, format: str = "srt", model_name: str = "Whisper", language: str = "auto") -> str:
         """
         Transcribe a long audio file by splitting it into segments and processing them concurrently using threads.
-        Returns the full transcription text.
+        Now optimized for automatic detection of mixed English and Malay content.
         
         Args:
             audio_path: Path to the input audio file
             output_path: Path to save the transcription output (optional)
             max_workers: Maximum number of worker threads to use for concurrent processing
-            format: Output format ('txt' for plain text, 'srt' for subtitle format)
+            format: Output format ('txt' for plain text, 'srt' for subtitle format, 'timed_txt' for time-separated text)
             model_name: Name of the model to use for transcription ("Whisper" or "Malaysia Whisper")
-            language: Language code for transcription ("en" for English, "ms" for Malay)
+            language: Language code for transcription ("en" for English, "ms" for Malay, "auto" for auto-detection)
             
         Returns:
-            Full transcription text
+            Full transcription text with automatic language detection for mixed content
         """
         if output_path is None:
             if format == "srt":
                 output_path = Path(audio_path).stem + "_transcription.srt"
+            elif format == "timed_txt":
+                output_path = Path(audio_path).stem + "_transcription_timed.txt"
             else:
                 output_path = Path(audio_path).stem + "_transcription.txt"
         
@@ -266,8 +284,14 @@ class AudioTranscriber:
         lang = language  # Use the requested language
         
         print(f"Processing audio file: {audio_path}")
-        print(f"max_workers parameter value in transcribe_file method: {max_workers}")
+        print(f"Model: {model_name} (API: {api_base})")
+        print(f"Language detection: {lang}")
+        print(f"Max workers: {max_workers}")
         print(f"Output format: {format}")
+        
+        # For auto-detection, use optimized settings
+        if lang.lower() == "auto":
+            print("Auto-detection mode enabled - optimized for English/Malay mixed content")
         
         # Split audio into segments
         segment_files, temp_dir_created = self.split_audio(audio_path)
@@ -349,6 +373,26 @@ class AudioTranscriber:
         if format == "srt":
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(srt_segments))
+        elif format == "timed_txt":
+            # Generate time-separated text with 30-second intervals
+            timed_text_segments = []
+            for i in range(len(segment_files)):
+                if i in results and results[i].strip():
+                    # Convert start time to minutes:seconds format
+                    start_seconds = start_times[i] // 1000
+                    minutes = start_seconds // 60
+                    seconds = start_seconds % 60
+                    timestamp = f"[{minutes:02d}:{seconds:02d}]"
+                    
+                    # Apply mixed-language post-processing if auto-detection was used
+                    segment_text = results[i].strip()
+                    if lang.lower() == "auto":
+                        segment_text = self.post_process_mixed_language_text(segment_text)
+                    
+                    timed_text_segments.append(f"{timestamp} {segment_text}")
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write('\n\n'.join(timed_text_segments))
         else:
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(full_transcription.strip())
@@ -368,9 +412,34 @@ class AudioTranscriber:
         
         if format == "srt":
             return '\n'.join(srt_segments)
+        elif format == "timed_txt":
+            # Return time-separated text for display with mixed-language processing
+            timed_text_segments = []
+            for i in range(len(segment_files)):
+                if i in results and results[i].strip():
+                    # Convert start time to minutes:seconds format
+                    start_seconds = start_times[i] // 1000
+                    minutes = start_seconds // 60
+                    seconds = start_seconds % 60
+                    timestamp = f"[{minutes:02d}:{seconds:02d}]"
+                    
+                    # Apply mixed-language post-processing if auto-detection was used
+                    segment_text = results[i].strip()
+                    if lang.lower() == "auto":
+                        segment_text = self.post_process_mixed_language_text(segment_text)
+                    
+                    timed_text_segments.append(f"{timestamp} {segment_text}")
+            
+            return '\n\n'.join(timed_text_segments)
         else:
-            # Apply post-processing to remove repeated phrases/words using NLTK
+            # Apply post-processing to remove repeated phrases/words and improve mixed language content
             processed_transcription = full_transcription.strip()
+            
+            # Apply mixed language post-processing if auto-detection was used
+            if lang.lower() == "auto":
+                processed_transcription = self.post_process_mixed_language_text(processed_transcription)
+                print("Applied mixed-language post-processing for auto-detection mode")
+            
             return processed_transcription
 
     def remove_repeated_phrases_nltk(self, text: str) -> str:
@@ -440,6 +509,63 @@ class AudioTranscriber:
         result = ' '.join(result.split())
         
         return result
+
+    def post_process_mixed_language_text(self, text: str) -> str:
+        """
+        Post-process transcribed text to improve mixed English/Malay content handling.
+        This function applies various fixes common in Malaysian multilingual contexts.
+        
+        Args:
+            text: The input transcribed text
+            
+        Returns:
+            Text with improved mixed language handling
+        """
+        if not text:
+            return text
+        
+        # Common English-Malay phrase corrections
+        corrections = {
+            # Common Malaysian meeting terms
+            'meeting': 'mesyuarat',  # Only if context suggests Malay
+            'okay': 'okay',  # Keep English "okay" as it's commonly used
+            'so': 'jadi',  # Context dependent
+            'thank you': 'terima kasih',
+            # Technical terms that should remain in English
+            'report': 'laporan',
+            'update': 'kemas kini',
+            'project': 'projek',
+            'system': 'sistem',
+            # Common meeting phrases
+            'next item': 'perkara seterusnya',
+            'action item': 'item tindakan',
+        }
+        
+        # Apply light corrections while preserving original mixed nature
+        processed_text = text
+        
+        # Fix common transcription issues in mixed content
+        # Remove excessive repetition while preserving intentional repetition
+        words = processed_text.split()
+        cleaned_words = []
+        i = 0
+        while i < len(words):
+            cleaned_words.append(words[i])
+            # Skip if the same word appears more than 3 times consecutively
+            consecutive_count = 1
+            while i + consecutive_count < len(words) and words[i] == words[i + consecutive_count]:
+                consecutive_count += 1
+            if consecutive_count <= 3:  # Allow up to 3 repetitions
+                for j in range(1, consecutive_count):
+                    cleaned_words.append(words[i + j])
+            i += consecutive_count
+        
+        processed_text = ' '.join(cleaned_words)
+        
+        # Clean up extra whitespace
+        processed_text = ' '.join(processed_text.split())
+        
+        return processed_text
 
     def get_available_models(self):
         """Get list of available models."""

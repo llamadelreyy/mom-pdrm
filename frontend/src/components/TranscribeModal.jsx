@@ -62,9 +62,7 @@ const TranscribeModal = ({ isOpen, onClose, selectedFile, onTranscribe }) => {
       await onTranscribe({
         fileId: selectedFile.id,
         title: title,
-        maxWorkers: 6,
-        modelName: 'Whisper Malaysia',
-        language: 'auto'
+        maxWorkers: 6
       });
       
       toast({
@@ -226,16 +224,22 @@ const TranscribeModal = ({ isOpen, onClose, selectedFile, onTranscribe }) => {
             >
               <VStack spacing={2} align="start">
                 <Text fontSize="sm" fontWeight="600" color="blue.600">
-                  Maklumat Pemprosesan (Dipertingkat):
+                  Maklumat Pemprosesan:
                 </Text>
                 <Text fontSize="xs" color="blue.600">
-                  • Model: Whisper Malaysia - Optimized untuk Malaysia
+                  • Model: Whisper STT - Dipaksa output Bahasa Melayu
                 </Text>
                 <Text fontSize="xs" color="blue.600">
-                  • Mod: Auto-detect campuran English & Bahasa Melayu
+                  • Bahasa: MS (dipaksa kepada Bahasa Melayu di peringkat STT)
                 </Text>
                 <Text fontSize="xs" color="blue.600">
-                  • Sokongan: Kandungan dwibahasa dalam mesyuarat
+                  • Input: Audio dalam sebarang bahasa (EN/MS/campuran)
+                </Text>
+                <Text fontSize="xs" color="blue.600">
+                  • Output: Transkrip dalam Bahasa Melayu sahaja
+                </Text>
+                <Text fontSize="xs" color="blue.600">
+                  • Format: Teks dengan cap masa setiap 30 saat
                 </Text>
                 <Text fontSize="xs" color="blue.600">
                   • Masa pemprosesan: Bergantung pada panjang audio

@@ -17,10 +17,13 @@ import shutil
 import asyncio
 import threading
 import time
-from transcribe_audio import AudioTranscriber
+from transcribe_audio import AudioTranscriber, TranscribeConfig
 from docx import Document
 import httpx
 from dotenv import load_dotenv
+
+# OAuth2PasswordBearer for token authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 # Load environment variables
 load_dotenv()
@@ -77,6 +80,27 @@ def save_data(file_path: Path, data: Dict):
             json.dump(data, f, indent=2)
     except Exception as e:
         logger.error(f"Error saving data to {file_path}: {str(e)}")
+
+# Authentication helper functions
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    """Extract username from token (simplified for this application)"""
+    if not token:
+        return None
+    # Extract username from token format: "user_{username}"
+    if token.startswith("user_"):
+        username = token[5:]  # Remove "user_" prefix
+        users = load_data(USERS_FILE)
+        if username in users:
+            return username
+    return None
+
+def get_user_from_email(email: str) -> Optional[str]:
+    """Get username from email"""
+    users = load_data(USERS_FILE)
+    for username, user_data in users.items():
+        if user_data.get('email', '').lower() == email.lower():
+            return username
+    return None
 
 # Models
 class UserLogin(BaseModel):
@@ -157,9 +181,6 @@ def process_transcription(job_id: str):
         job["status"] = "processing"
         save_data(JOBS_FILE, jobs)
         
-        # Create AudioTranscriber instance
-        transcriber = AudioTranscriber()
-        
         # Get file path and settings
         file_path = job["file_path"]
         settings = job["settings"]
@@ -169,37 +190,75 @@ def process_transcription(job_id: str):
         job["message"] = "Memulakan transkripsi..."
         save_data(JOBS_FILE, jobs)
         
+        # Get Whisper API URL from environment variable
+        whisper_api_url = os.getenv("WHISPER_API_URL", "http://localhost:7801/v1")
+        logger.info(f"Using Whisper API URL: {whisper_api_url}")
+        
+        # Create TranscribeConfig with settings (single-pass pipeline with forced Malay)
+        config = TranscribeConfig(
+            api_key="EMPTY",
+            api_base=whisper_api_url,
+            model=os.getenv("WHISPER_MODEL", "stt_model"),
+            language="ms",  # Force Malay output at STT level
+            segment_length_ms=30_000,  # 30 seconds
+            overlap_ms=500,           # 0.5 seconds overlap
+            max_concurrency=settings.get("max_workers", 6),
+            output_format="timed_txt",  # Use time-separated text output
+            temperature=0.1,
+            extra_body={"seed": 42, "repetition_penalty": 1.1}
+        )
+        
+        # Create AudioTranscriber instance
+        transcriber = AudioTranscriber(config)
+        
         # Start transcription
         try:
-            # Transcribe the file with time-separated format
-            transcription = transcriber.transcribe_file(
-                audio_path=file_path,
-                max_workers=settings["max_workers"],
-                model_name=settings["model_name"],
-                language=settings["language"],
-                format="timed_txt"  # Use time-separated text output
-            )
-            
-            # Update job status
-            job["status"] = "completed"
-            job["progress"] = 100
-            job["message"] = "Transkrip selesai"
+            # Update progress
+            jobs = load_data(JOBS_FILE)
+            jobs[job_id]["progress"] = 10
+            jobs[job_id]["message"] = "Memproses audio..."
             save_data(JOBS_FILE, jobs)
             
-            # Store the transcript
-            transcripts = load_data(TRANSCRIPTS_FILE)
-            transcripts[job_id] = {
-                "text": transcription,
-                "title": settings["title"]
-            }
-            save_data(TRANSCRIPTS_FILE, transcripts)
+            # Run the async transcription in a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
+            try:
+                # Transcribe the file
+                transcription = loop.run_until_complete(
+                    transcriber.transcribe_file(audio_path=file_path)
+                )
+                
+                # Update job status
+                jobs = load_data(JOBS_FILE)
+                jobs[job_id]["status"] = "completed"
+                jobs[job_id]["progress"] = 100
+                jobs[job_id]["message"] = "Transkrip selesai"
+                save_data(JOBS_FILE, jobs)
+                
+                # Store the transcript with user association
+                transcripts = load_data(TRANSCRIPTS_FILE)
+                transcripts[job_id] = {
+                    "text": transcription,
+                    "title": settings["title"],
+                    "username": job.get("username"),
+                    "file_id": job.get("file_id"),
+                    "created_at": job.get("created_at", datetime.now().isoformat()),
+                    "status": "completed"
+                }
+                save_data(TRANSCRIPTS_FILE, transcripts)
+                
+            finally:
+                loop.close()
+                
         except Exception as e:
             logger.error(f"Transcription error: {str(e)}")
-            job["status"] = "error"
-            job["message"] = f"Ralat semasa transkripsi: {str(e)}"
-            job["progress"] = 0
-            save_data(JOBS_FILE, jobs)
+            jobs = load_data(JOBS_FILE)
+            if job_id in jobs:
+                jobs[job_id]["status"] = "error"
+                jobs[job_id]["message"] = f"Ralat semasa transkripsi: {str(e)}"
+                jobs[job_id]["progress"] = 0
+                save_data(JOBS_FILE, jobs)
             
     except Exception as e:
         logger.error(f"Error in transcription process: {str(e)}")
@@ -677,13 +736,17 @@ async def login(user_data: UserLogin):
     
     logger.info(f"Successful login for email: {user_data.email}")
     return {
-        "token": "dummy_token",  # In production, use proper JWT
+        "token": f"user_{username}",  # Include username in token for identification
+        "username": username,
         "name": user["full_name"]
     }
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     try:
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+            
         # Generate unique file ID
         file_id = str(uuid.uuid4())
         upload_progress[file_id] = 0
@@ -704,16 +767,18 @@ async def upload_file(file: UploadFile = File(...)):
         
         upload_progress[file_id] = 100
         
-        # Store file info
+        # Store file info with user association
         uploads = load_data(UPLOADS_FILE)
         uploads[file_id] = {
             "filename": file.filename,
             "path": str(file_path),
-            "size": file_size
+            "size": file_size,
+            "username": current_user,
+            "upload_date": datetime.now().isoformat()
         }
         save_data(UPLOADS_FILE, uploads)
         
-        logger.info(f"File saved successfully. ID: {file_id}, Path: {file_path}")
+        logger.info(f"File saved successfully. ID: {file_id}, Path: {file_path}, User: {current_user}")
         return {
             "file_id": file_id,
             "filename": file.filename,
@@ -740,9 +805,12 @@ async def get_upload_progress(file_id: str):
     }
 
 @app.post("/transcribe")
-async def transcribe_audio(request: TranscribeRequest):
+async def transcribe_audio(request: TranscribeRequest, current_user: str = Depends(get_current_user)):
     try:
-        logger.info(f"Received transcription request for file ID: {request.file_id}")
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+            
+        logger.info(f"Received transcription request for file ID: {request.file_id} by user: {current_user}")
         
         # Check if file exists
         uploads = load_data(UPLOADS_FILE)
@@ -752,6 +820,13 @@ async def transcribe_audio(request: TranscribeRequest):
             raise HTTPException(
                 status_code=404,
                 detail="File not found"
+            )
+
+        # Check if user owns this file
+        if file_info.get("username") != current_user:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied. You can only transcribe your own files."
             )
 
         # Check if file exists on disk
@@ -766,12 +841,14 @@ async def transcribe_audio(request: TranscribeRequest):
         # Generate unique request ID
         request_id = str(uuid.uuid4())
         
-        # Save transcription job info
+        # Save transcription job info with user association
         jobs = load_data(JOBS_FILE)
         jobs[request_id] = {
             "status": "pending",
             "file_name": file_info["filename"],
             "file_path": str(file_path),
+            "username": current_user,
+            "file_id": request.file_id,
             "settings": {
                 "max_workers": request.max_workers,
                 "model_name": request.model_name,
@@ -779,7 +856,8 @@ async def transcribe_audio(request: TranscribeRequest):
                 "title": request.title
             },
             "progress": 0,
-            "message": "Memulakan transkripsi..."
+            "message": "Memulakan transkripsi...",
+            "created_at": datetime.now().isoformat()
         }
         save_data(JOBS_FILE, jobs)
         
@@ -788,7 +866,7 @@ async def transcribe_audio(request: TranscribeRequest):
         thread.daemon = True  # Make thread daemon so it doesn't block shutdown
         thread.start()
         
-        logger.info(f"Created transcription job: {request_id}")
+        logger.info(f"Created transcription job: {request_id} for user: {current_user}")
         
         return {
             "request_id": request_id,
@@ -981,6 +1059,52 @@ async def list_reports():
         for report_id, report in reports.items()
     ]
 
+@app.get("/uploads")
+async def list_uploads(current_user: str = Depends(get_current_user)):
+    """List all uploads for the authenticated user"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    uploads = load_data(UPLOADS_FILE)
+    user_uploads = []
+    
+    for upload_id, upload_data in uploads.items():
+        if upload_data.get("username") == current_user:
+            user_uploads.append({
+                "id": upload_id,
+                "filename": upload_data.get("filename", ""),
+                "size": upload_data.get("size", 0),
+                "upload_date": upload_data.get("upload_date", "")
+            })
+    
+    # Sort by upload_date (newest first)
+    user_uploads.sort(key=lambda x: x.get("upload_date", ""), reverse=True)
+    return user_uploads
+
+@app.get("/transcripts")
+async def list_transcripts(current_user: str = Depends(get_current_user)):
+    """List all transcripts for the authenticated user"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    transcripts = load_data(TRANSCRIPTS_FILE)
+    user_transcripts = []
+    
+    for transcript_id, transcript_data in transcripts.items():
+        if transcript_data.get("username") == current_user:
+            user_transcripts.append({
+                "id": transcript_id,
+                "title": transcript_data.get("title", ""),
+                "text": transcript_data.get("text", "")[:200] + "..." if len(transcript_data.get("text", "")) > 200 else transcript_data.get("text", ""),  # Preview only
+                "created_at": transcript_data.get("created_at", ""),
+                "file_id": transcript_data.get("file_id", ""),
+                "status": transcript_data.get("status", "completed")
+            })
+    
+    # Sort by created_at (newest first)
+    user_transcripts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return user_transcripts
+
 @app.delete("/reports/{report_id}")
 async def delete_report(report_id: str):
     reports = load_data(REPORTS_FILE)
@@ -1011,110 +1135,34 @@ async def logout():
 
 @app.get("/statistics")
 async def get_statistics():
-    """Get comprehensive system statistics."""
+    """Get simple system statistics - current counts only."""
     try:
-        users = load_data(USERS_FILE)
         uploads = load_data(UPLOADS_FILE)
         transcripts = load_data(TRANSCRIPTS_FILE)
-        jobs = load_data(JOBS_FILE)
         reports = load_data(REPORTS_FILE)
         
-        # Calculate basic counts
-        total_users = len(users)
-        total_audio_files = len(uploads)
-        total_transcripts = len(transcripts)
-        total_reports = len(reports)
-        
-        # Calculate transcript status breakdown
-        transcript_statuses = {}
-        for job_id, job in jobs.items():
-            status = job.get('status', 'unknown')
-            transcript_statuses[status] = transcript_statuses.get(status, 0) + 1
-            
-        # Calculate report status breakdown
-        report_statuses = {}
-        for report_id, report in reports.items():
-            status = report.get('status', 'unknown')
-            report_statuses[status] = report_statuses.get(status, 0) + 1
-        
-        # Calculate monthly user registrations for the last 12 months
-        import calendar
-        
-        monthly_registrations = {}
-        current_date = datetime.now()
-        
-        for i in range(12):
-            # Calculate the month/year for i months ago
-            target_date = current_date - timedelta(days=i*30)
-            month_key = target_date.strftime("%Y-%m")
-            month_name = f"{calendar.month_name[target_date.month]} {target_date.year}"
-            monthly_registrations[month_key] = {
-                "month": month_name,
-                "count": 0,
-                "users": []
-            }
-        
-        # Count user registrations by month
-        for username, user_data in users.items():
-            created_at = user_data.get('created_at', '2024-01-01')
-            try:
-                user_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                month_key = user_date.strftime("%Y-%m")
-                if month_key in monthly_registrations:
-                    monthly_registrations[month_key]["count"] += 1
-                    monthly_registrations[month_key]["users"].append({
-                        "username": username,
-                        "full_name": user_data.get('full_name', ''),
-                        "email": user_data.get('email', ''),
-                        "created_at": created_at
-                    })
-            except:
-                pass
-        
-        # Calculate recent activity (last 30 days)
-        recent_uploads = 0
-        recent_transcripts = 0
-        recent_reports = 0
-        
-        thirty_days_ago = datetime.now() - timedelta(days=30)
-        
+        # Count only existing audio files
+        total_audio_files = 0
         for upload_id, upload in uploads.items():
             try:
                 file_path = Path(upload.get('path', ''))
                 if file_path.exists():
-                    file_time = datetime.fromtimestamp(file_path.stat().st_mtime)
-                    if file_time > thirty_days_ago:
-                        recent_uploads += 1
+                    total_audio_files += 1
             except:
-                pass
+                continue
         
-        for job_id, job in jobs.items():
-            recent_transcripts += 1 if job.get('status') == 'completed' else 0
-            
-        for report_id, report in reports.items():
-            try:
-                created_at = report.get('created_at', '')
-                if created_at:
-                    report_date = datetime.fromisoformat(created_at)
-                    if report_date > thirty_days_ago:
-                        recent_reports += 1
-            except:
-                pass
+        # Count existing transcripts
+        total_transcripts = len(transcripts)
+        
+        # Count existing reports
+        total_reports = len(reports)
         
         return {
             "overview": {
-                "total_users": total_users,
                 "total_audio_files": total_audio_files,
                 "total_transcripts": total_transcripts,
-                "total_reports": total_reports,
-                "recent_uploads": recent_uploads,
-                "recent_transcripts": recent_transcripts,
-                "recent_reports": recent_reports
-            },
-            "transcript_statuses": transcript_statuses,
-            "report_statuses": report_statuses,
-            "monthly_registrations": monthly_registrations,
-            "generated_at": datetime.now().isoformat()
+                "total_reports": total_reports
+            }
         }
         
     except Exception as e:

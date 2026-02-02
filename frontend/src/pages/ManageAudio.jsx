@@ -36,9 +36,25 @@ const ManageAudio = () => {
     loadAudioFiles();
   }, []);
 
-  const loadAudioFiles = () => {
-    const savedFiles = JSON.parse(localStorage.getItem('audioFiles') || '[]');
-    setAudioFiles(savedFiles);
+  const loadAudioFiles = async () => {
+    try {
+      const files = await api.listUploads();
+      setAudioFiles(files.map(file => ({
+        id: file.id,
+        name: file.filename,
+        size: file.size,
+        uploadDate: file.upload_date
+      })));
+    } catch (error) {
+      console.error('Error loading audio files:', error);
+      toast({
+        title: 'Ralat',
+        description: 'Ralat semasa memuat senarai fail audio',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
   };
 
   const handleFileUpload = async (file) => {
@@ -48,16 +64,8 @@ const ManageAudio = () => {
     try {
       const result = await api.uploadAudio(file);
       
-      const newFile = {
-        id: result.file_id,
-        name: file.filename || file.name,
-        size: file.size,
-        uploadDate: new Date().toISOString()
-      };
-
-      const updatedFiles = [...audioFiles, newFile];
-      setAudioFiles(updatedFiles);
-      localStorage.setItem('audioFiles', JSON.stringify(updatedFiles));
+      // Reload the audio files from the server to get the updated list
+      await loadAudioFiles();
 
       toast({
         title: 'Berjaya',
@@ -87,14 +95,14 @@ const ManageAudio = () => {
 
   const confirmDelete = async () => {
     try {
-      // Remove from local storage
+      // For now, just remove from frontend list since there's no delete API endpoint
+      // TODO: Add delete API endpoint on backend
       const updatedFiles = audioFiles.filter(f => f.id !== fileToDelete.id);
       setAudioFiles(updatedFiles);
-      localStorage.setItem('audioFiles', JSON.stringify(updatedFiles));
 
       toast({
         title: 'Berjaya',
-        description: 'Fail audio telah dipadam',
+        description: 'Fail audio telah dipadam daripada senarai',
         status: 'success',
         duration: 3000,
         isClosable: true,
@@ -116,7 +124,9 @@ const ManageAudio = () => {
   const handleTranscribe = async (data) => {
     try {
       // Start transcription and get the request ID
-      const response = await api.transcribeAudio(data.fileId, data.title);
+      const response = await api.transcribeAudio(data.fileId, data.title, {
+        maxWorkers: data.maxWorkers || 6
+      });
 
       // Create transcript entry with request_id
       const transcripts = JSON.parse(localStorage.getItem('transcripts') || '[]');
@@ -134,7 +144,7 @@ const ManageAudio = () => {
 
       toast({
         title: 'Berjaya',
-        description: 'Proses transkripsi telah dimulakan',
+        description: 'Proses transkripsi telah dimulakan dengan pengesan bahasa automatik',
         status: 'success',
         duration: 3000,
         isClosable: true,

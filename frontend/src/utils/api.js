@@ -72,7 +72,7 @@ export const api = {
     return response.json();
   },
 
-  async transcribeAudio(fileId, title) {
+  async transcribeAudio(fileId, title, settings = {}) {
     const response = await fetch(`${BASE_URL}/transcribe`, {
       method: 'POST',
       headers: {
@@ -82,9 +82,9 @@ export const api = {
       body: JSON.stringify({
         file_id: fileId,
         title: title,
-        max_workers: 6,
-        model_name: 'Whisper Malaysia',
-        language: 'auto'
+        max_workers: settings.maxWorkers || 6,
+        model_name: 'stt_model',
+        language: 'auto'  // Keep for backward compatibility, but will be auto-detected
       })
     });
 
@@ -189,8 +189,17 @@ export const api = {
     return true;
   },
 
-  async getStatistics() {
-    const response = await fetch(`${BASE_URL}/statistics`, {
+  async getStatistics(params = {}) {
+    const queryParams = new URLSearchParams();
+    if (params.start_date) {
+      queryParams.append('start_date', params.start_date);
+    }
+    if (params.end_date) {
+      queryParams.append('end_date', params.end_date);
+    }
+    
+    const url = `${BASE_URL}/statistics${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await fetch(url, {
       headers: getHeaders()
     });
 
@@ -200,6 +209,24 @@ export const api = {
 
   async getUserStatistics(period = 'all') {
     const response = await fetch(`${BASE_URL}/statistics/users/${period}`, {
+      headers: getHeaders()
+    });
+
+    await handleResponse(response);
+    return response.json();
+  },
+
+  async listUploads() {
+    const response = await fetch(`${BASE_URL}/uploads`, {
+      headers: getHeaders()
+    });
+
+    await handleResponse(response);
+    return response.json();
+  },
+
+  async listTranscripts() {
+    const response = await fetch(`${BASE_URL}/transcripts`, {
       headers: getHeaders()
     });
 

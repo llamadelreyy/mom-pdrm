@@ -50,18 +50,18 @@ const ManageTranscript = () => {
     };
   }, []);
 
-  const loadTranscripts = () => {
+  const loadTranscripts = async () => {
     try {
-      const savedTranscripts = JSON.parse(localStorage.getItem('transcripts') || '[]');
+      const transcriptsList = await api.listTranscripts();
       
-      // Filter out any null or undefined transcripts
-      const validTranscripts = savedTranscripts.filter(t => t && t.id);
-      
-      // Map the transcripts to include text property
-      const mappedTranscripts = validTranscripts.map(transcript => ({
-        ...transcript,
-        text: transcript.text || '', // Keep existing text or initialize empty
-        date: transcript.date || new Date().toISOString() // Ensure date exists
+      // Map the transcripts to expected format
+      const mappedTranscripts = transcriptsList.map(transcript => ({
+        id: transcript.id,
+        title: transcript.title,
+        text: transcript.text || '',
+        date: transcript.created_at || new Date().toISOString(),
+        fileId: transcript.file_id,
+        status: transcript.status || 'completed'
       }));
       
       setTranscripts(mappedTranscripts);

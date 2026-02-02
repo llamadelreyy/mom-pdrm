@@ -1,6 +1,31 @@
+# Project-specific ignores
 uploads/
 transcriptions/
 temp/
+reports/
+data/
+users.json
+
+# Transcription files
+*_transcription.txt
+*_transcription_timed.txt
+
+# Debian packages
+*.deb
+
+# Node.js (for React frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

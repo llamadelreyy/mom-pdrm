@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
 import {
   Box,
   SimpleGrid,
@@ -10,47 +12,32 @@ import {
   VStack,
   Container,
   HStack,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  Badge,
-  Circle,
   Card,
   CardBody,
   CardHeader,
-  Divider,
   useToast,
   Spinner,
   Center,
   Button,
   Progress,
-  Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem as ChakraMenuItem,
+  Circle,
+  Badge,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverBody,
+  PopoverArrow,
+  Portal,
 } from '@chakra-ui/react';
 import {
   FaFileAudio,
   FaFileAlt,
-  FaClock,
-  FaCheck,
   FaUsers,
-  FaUserPlus,
-  FaChartLine,
-  FaEye,
-  FaFilter,
+  FaCheck,
   FaCalendarAlt,
-  FaDownload,
   FaArrowUp,
-  FaArrowDown
+  FaArrowDown,
+  FaChartLine,
 } from 'react-icons/fa';
 import { api } from '../utils/api';
 
@@ -143,55 +130,112 @@ const ModernStatCard = ({ label, number, helpText, icon, gradient, accentColor, 
   );
 };
 
-const TimeFilter = ({ selectedPeriod, onPeriodChange }) => {
-  const generateOptions = () => {
-    const options = [{ value: 'all', label: 'Semua Masa' }];
-    const currentDate = new Date();
-    
-    for (let i = 0; i < 12; i++) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      const value = date.toISOString().slice(0, 7);
-      const label = date.toLocaleDateString('ms-MY', { 
-        year: 'numeric', 
-        month: 'long' 
+const DateRangeFilter = ({ startDate, endDate, onDateRangeChange, onApplyFilter }) => {
+  const [tempStartDate, setTempStartDate] = useState(startDate);
+  const [tempEndDate, setTempEndDate] = useState(endDate);
+  const bgColor = useColorModeValue('white', 'gray.800');
+
+  const handleDateChange = (dates) => {
+    const [start, end] = dates;
+    setTempStartDate(start);
+    setTempEndDate(end);
+  };
+
+  const formatDateRange = () => {
+    if (startDate && endDate) {
+      const startStr = startDate.toLocaleDateString('ms-MY', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric' 
       });
-      options.push({ value, label });
+      const endStr = endDate.toLocaleDateString('ms-MY', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric' 
+      });
+      return `${startStr} - ${endStr}`;
+    } else if (startDate) {
+      return `Dari: ${startDate.toLocaleDateString('ms-MY', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric' 
+      })}`;
     }
-    
-    return options;
+    return "Semua Masa";
+  };
+
+  const applyFilter = (onClose) => {
+    onDateRangeChange(tempStartDate, tempEndDate);
+    onApplyFilter();
+    onClose();
+  };
+
+  const clearFilter = (onClose) => {
+    setTempStartDate(null);
+    setTempEndDate(null);
+    onDateRangeChange(null, null);
+    onApplyFilter();
+    onClose();
   };
 
   return (
-    <Menu>
-      <MenuButton
-        as={Button}
-        rightIcon={<FaFilter />}
-        leftIcon={<FaCalendarAlt />}
-        colorScheme="primary"
-        variant="outline"
-        size="md"
-        borderRadius="xl"
-        fontWeight="600"
-        px={6}
-      >
-        {selectedPeriod === 'all' ? 'Semua Masa' : 
-         generateOptions().find(opt => opt.value === selectedPeriod)?.label || 'Pilih Tempoh'}
-      </MenuButton>
-      <MenuList borderRadius="xl" shadow="xl">
-        {generateOptions().map(option => (
-          <ChakraMenuItem 
-            key={option.value} 
-            onClick={() => onPeriodChange(option.value)}
-            icon={<FaCalendarAlt />}
-            borderRadius="lg"
-            mx={2}
-            my={1}
-          >
-            {option.label}
-          </ChakraMenuItem>
-        ))}
-      </MenuList>
-    </Menu>
+    <Popover placement="bottom-end" closeOnBlur={false}>
+      {({ onClose }) => (
+        <>
+          <PopoverTrigger>
+            <Button
+              leftIcon={<FaCalendarAlt />}
+              colorScheme="primary"
+              variant="outline"
+              size="md"
+              borderRadius="xl"
+              fontWeight="600"
+              px={6}
+              bg={bgColor}
+            >
+              {formatDateRange()}
+            </Button>
+          </PopoverTrigger>
+          <Portal>
+            <PopoverContent minW="350px" border="1px" borderColor="gray.200" boxShadow="2xl">
+              <PopoverArrow />
+              <PopoverBody p={4}>
+                <DatePicker
+                  selected={tempStartDate}
+                  onChange={handleDateChange}
+                  startDate={tempStartDate}
+                  endDate={tempEndDate}
+                  selectsRange
+                  inline
+                  locale="ms"
+                  dateFormat="dd/MM/yyyy"
+                  placeholderText="Pilih tarikh"
+                  isClearable
+                />
+                <HStack mt={3} justify="space-between">
+                  <Button size="sm" variant="ghost" onClick={onClose}>
+                    Batal
+                  </Button>
+                  <HStack spacing={2}>
+                    <Button size="sm" colorScheme="gray" onClick={() => clearFilter(onClose)}>
+                      Reset
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      colorScheme="primary" 
+                      onClick={() => applyFilter(onClose)}
+                      isDisabled={!tempStartDate || !tempEndDate}
+                    >
+                      Aplai
+                    </Button>
+                  </HStack>
+                </HStack>
+              </PopoverBody>
+            </PopoverContent>
+          </Portal>
+        </>
+      )}
+    </Popover>
   );
 };
 
@@ -217,7 +261,7 @@ const QuickInsights = ({ statistics }) => {
     {
       label: "Laporan Pending",
       value: "1", 
-      icon: FaClock,
+      icon: FaCheck,
       color: "orange.500",
       trend: "Sama"
     }
@@ -266,7 +310,7 @@ const ActivityChart = ({ title, period, data = null }) => {
         <HStack justify="space-between">
           <Heading size="md" fontWeight="800" color="#1f1b51">{title}</Heading>
           <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3}>
-            {period === 'all' ? 'Keseluruhan' : 'Bulanan'}
+            {period || 'Keseluruhan'}
           </Badge>
         </HStack>
       </CardHeader>
@@ -280,7 +324,7 @@ const ActivityChart = ({ title, period, data = null }) => {
               Visualisasi {title} 
             </Text>
             <Text fontSize="sm" color="gray.400" textAlign="center">
-              Carta interaktif untuk tempoh: {period === 'all' ? 'Semua masa' : period}
+              Carta interaktif untuk tempoh yang dipilih
             </Text>
             <Badge colorScheme="blue" variant="outline">Coming Soon</Badge>
           </VStack>
@@ -290,176 +334,16 @@ const ActivityChart = ({ title, period, data = null }) => {
   );
 };
 
-const UserActivityTable = ({ users, period }) => {
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.100', 'gray.600');
-  const theadBg = useColorModeValue('gray.50', 'gray.700');
-  const hoverBg = useColorModeValue('gray.50', 'gray.700');
-
-  const formatDate = (dateString) => {
-    if (!dateString || dateString === 'Never') return 'Tidak pernah';
-    try {
-      return new Date(dateString).toLocaleDateString('ms-MY', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return 'Tidak sah';
-    }
-  };
-
-  const getActivityStatus = (lastLogin) => {
-    if (!lastLogin || lastLogin === 'Never') return 'inactive';
-    
-    const now = new Date();
-    const login = new Date(lastLogin);
-    const daysDiff = (now - login) / (1000 * 60 * 60 * 24);
-    
-    if (daysDiff <= 7) return 'active';
-    if (daysDiff <= 30) return 'moderate';
-    return 'inactive';
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active': return 'green';
-      case 'moderate': return 'yellow';
-      case 'inactive': return 'red';
-      default: return 'gray';
-    }
-  };
-
-  const getStatusText = (status) => {
-    switch (status) {
-      case 'active': return 'Aktif';
-      case 'moderate': return 'Sederhana';
-      case 'inactive': return 'Tidak Aktif';
-      default: return 'Unknown';
-    }
-  };
-
-  if (!users || users.length === 0) {
-    return (
-      <Card bg={bgColor} borderRadius="2xl" boxShadow="card">
-        <CardBody>
-          <Center py={12}>
-            <VStack spacing={4}>
-              <Circle size="60px" bg="gray.100" color="gray.400">
-                <Icon as={FaUsers} boxSize={6} />
-              </Circle>
-              <Text color="gray.500" fontWeight="600">Tiada pengguna untuk tempoh yang dipilih</Text>
-            </VStack>
-          </Center>
-        </CardBody>
-      </Card>
-    );
-  }
-
-  return (
-    <Card bg={bgColor} borderRadius="2xl" boxShadow="card">
-      <CardHeader>
-        <Heading size="md" fontWeight="800" color="#1f1b51">
-          Aktiviti Pengguna ({users.length} pengguna)
-        </Heading>
-      </CardHeader>
-      <CardBody>
-        <Box overflowX="auto">
-          <Table variant="simple" size="md">
-            <Thead bg={theadBg}>
-              <Tr>
-                <Th fontSize="xs" fontWeight="800" textTransform="uppercase" letterSpacing="wider">
-                  Pengguna
-                </Th>
-                <Th fontSize="xs" fontWeight="800" textTransform="uppercase" letterSpacing="wider">
-                  Emel
-                </Th>
-                <Th fontSize="xs" fontWeight="800" textTransform="uppercase" letterSpacing="wider">
-                  Tarikh Daftar
-                </Th>
-                <Th fontSize="xs" fontWeight="800" textTransform="uppercase" letterSpacing="wider">
-                  Log Masuk Terakhir
-                </Th>
-                <Th fontSize="xs" fontWeight="800" textTransform="uppercase" letterSpacing="wider">
-                  Status
-                </Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {users.map((user, index) => {
-                const status = getActivityStatus(user.last_login);
-                return (
-                  <Tr key={index} _hover={{ bg: hoverBg }}>
-                    <Td py={4}>
-                      <HStack spacing={3}>
-                        <Circle size="35px" bg={`${getStatusColor(status)}.100`} color={`${getStatusColor(status)}.500`}>
-                          <Icon as={FaUsers} boxSize={4} />
-                        </Circle>
-                        <VStack align="start" spacing={1}>
-                          <Text fontWeight="600" fontSize="sm">{user.full_name}</Text>
-                          <Text fontSize="xs" color="gray.500">@{user.username}</Text>
-                        </VStack>
-                      </HStack>
-                    </Td>
-                    <Td py={4}>
-                      <Text fontSize="sm">{user.email}</Text>
-                    </Td>
-                    <Td py={4}>
-                      <Text fontSize="sm">{formatDate(user.created_at)}</Text>
-                    </Td>
-                    <Td py={4}>
-                      <Text fontSize="sm">{formatDate(user.last_login)}</Text>
-                    </Td>
-                    <Td py={4}>
-                      <Badge
-                        colorScheme={getStatusColor(status)}
-                        variant="solid"
-                        borderRadius="full"
-                        px={4}
-                        py={1}
-                        fontSize="xs"
-                        fontWeight="700"
-                      >
-                        {getStatusText(status)}
-                      </Badge>
-                    </Td>
-                  </Tr>
-                );
-              })}
-            </Tbody>
-          </Table>
-        </Box>
-      </CardBody>
-    </Card>
-  );
-};
-
 const Dashboard = () => {
   const [statistics, setStatistics] = useState(null);
-  const [userStats, setUserStats] = useState(null);
-  const [selectedPeriod, setSelectedPeriod] = useState('all');
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [userLoading, setUserLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState(0);
   const toast = useToast();
-
-  // All useColorModeValue hooks must be called at the top level
-  const headingColor = useColorModeValue('#1f1b51', 'white');
-  const subtitleColor = useColorModeValue('gray.600', 'gray.300');
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.100', 'gray.700');
-  const hoverBg = useColorModeValue('gray.100', 'gray.700');
 
   useEffect(() => {
     loadStatistics();
-    loadUserStatistics('all');
   }, []);
-
-  useEffect(() => {
-    loadUserStatistics(selectedPeriod);
-  }, [selectedPeriod]);
 
   const loadStatistics = async () => {
     try {
@@ -479,21 +363,52 @@ const Dashboard = () => {
     }
   };
 
-  const loadUserStatistics = async (period) => {
+  const loadFilteredStatistics = async () => {
     try {
-      setUserLoading(true);
-      const data = await api.getUserStatistics(period);
-      setUserStats(data);
+      setLoading(true);
+      // Here you would make an API call with date range parameters
+      // You can pass startDate and endDate as query parameters to your API
+      const params = {};
+      if (startDate) {
+        params.start_date = startDate.toISOString().split('T')[0];
+      }
+      if (endDate) {
+        params.end_date = endDate.toISOString().split('T')[0];
+      }
+      
+      const data = await api.getStatistics(params);
+      setStatistics(data);
+      
+      toast({
+        title: 'Berjaya',
+        description: `Data dikemaskini untuk tempoh ${startDate ? startDate.toLocaleDateString('ms-MY') : ''} - ${endDate ? endDate.toLocaleDateString('ms-MY') : ''}`,
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
     } catch (error) {
       toast({
         title: 'Ralat',
-        description: error.message || 'Gagal memuat statistik pengguna',
+        description: error.message || 'Gagal memuat statistik untuk tempoh yang dipilih',
         status: 'error',
         duration: 3000,
         isClosable: true,
       });
     } finally {
-      setUserLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const handleDateRangeChange = (start, end) => {
+    setStartDate(start);
+    setEndDate(end);
+  };
+
+  const handleApplyFilter = () => {
+    if (startDate && endDate) {
+      loadFilteredStatistics();
+    } else {
+      loadStatistics();
     }
   };
 
@@ -512,7 +427,7 @@ const Dashboard = () => {
 
   return (
     <Container maxW="7xl" py={6}>
-      {/* Modern Header with Filtering */}
+      {/* Modern Header with Date Filtering */}
       <Box 
         mb={8} 
         p={8} 
@@ -556,252 +471,80 @@ const Dashboard = () => {
             </HStack>
           </VStack>
           
-          <VStack spacing={4}>
-            <TimeFilter 
-              selectedPeriod={selectedPeriod}
-              onPeriodChange={setSelectedPeriod}
-            />
-            <Button
-              leftIcon={<FaDownload />}
-              colorScheme="whiteAlpha"
-              variant="solid"
-              size="sm"
-              borderRadius="xl"
-              onClick={loadStatistics}
-              fontWeight="600"
-            >
-              Refresh Data
-            </Button>
-          </VStack>
+          <DateRangeFilter 
+            startDate={startDate}
+            endDate={endDate}
+            onDateRangeChange={handleDateRangeChange}
+            onApplyFilter={handleApplyFilter}
+          />
         </Flex>
       </Box>
 
-      {/* Modern Tabbed Interface */}
-      <Tabs variant="unstyled" colorScheme="primary" index={activeTab} onChange={setActiveTab}>
-        <TabList 
-          mb={8} 
-          borderRadius="2xl" 
-          bg={cardBg} 
-          p={2} 
-          shadow="md"
-          border="1px"
-          borderColor={borderColor}
-        >
-          <Tab 
-            borderRadius="xl" 
-            fontWeight="700" 
-            px={6}
-            _selected={{ 
-              bg: '#1f1b51', 
-              color: 'white',
-              shadow: 'md'
-            }}
-            _hover={{
-              bg: hoverBg
-            }}
-          >
-            <Icon as={FaChartLine} mr={2} /> Ringkasan Eksekutif
-          </Tab>
-          <Tab 
-            borderRadius="xl" 
-            fontWeight="700" 
-            px={6}
-            _selected={{ 
-              bg: '#1f1b51', 
-              color: 'white',
-              shadow: 'md'
-            }}
-            _hover={{
-              bg: hoverBg
-            }}
-          >
-            <Icon as={FaUsers} mr={2} /> Analitik Pengguna
-          </Tab>
-          <Tab 
-            borderRadius="xl" 
-            fontWeight="700" 
-            px={6}
-            _selected={{ 
-              bg: '#1f1b51', 
-              color: 'white',
-              shadow: 'md'
-            }}
-            _hover={{
-              bg: hoverBg
-            }}
-          >
-            <Icon as={FaFileAlt} mr={2} /> Trend Aktiviti
-          </Tab>
-        </TabList>
+      {/* Main Dashboard Content */}
+      <VStack spacing={8}>
+        {/* Key Metrics */}
+        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={6} w="full">
+          <ModernStatCard
+            label="Total Pengguna Aktif"
+            number={statistics?.overview?.total_users || 0}
+            helpText="Pengguna berdaftar dalam sistem"
+            icon={FaUsers}
+            gradient="linear(to-br, purple.400, purple.600)"
+            accentColor="purple.500"
+            percentage={15}
+            isLoading={loading}
+          />
+          
+          <ModernStatCard
+            label="Fail Audio Dimuat Naik"
+            number={statistics?.overview?.total_audio_files || 0}
+            helpText={`${statistics?.overview?.recent_uploads || 0} dalam 30 hari`}
+            icon={FaFileAudio}
+            gradient="linear(to-br, blue.400, blue.600)"
+            accentColor="blue.500"
+            trend={statistics?.overview?.recent_uploads || 0}
+            percentage={8}
+            isLoading={loading}
+          />
+          
+          <ModernStatCard
+            label="Transkrip Dijana"
+            number={statistics?.overview?.total_transcripts || 0}
+            helpText="Proses transkripsi selesai"
+            icon={FaFileAlt}
+            gradient="linear(to-br, green.400, green.600)"
+            accentColor="green.500"
+            trend={statistics?.overview?.recent_transcripts || 0}
+            percentage={23}
+            isLoading={loading}
+          />
+          
+          <ModernStatCard
+            label="Laporan Diterbitkan"
+            number={statistics?.overview?.total_reports || 0}
+            helpText="Dokumen laporan siap"
+            icon={FaCheck}
+            gradient="linear(to-br, orange.400, orange.600)"
+            accentColor="orange.500"
+            trend={statistics?.overview?.recent_reports || 0}
+            percentage={-5}
+            isLoading={loading}
+          />
+        </SimpleGrid>
 
-        <TabPanels>
-          {/* Executive Overview Tab */}
-          <TabPanel>
-            <VStack spacing={8}>
-              {/* Key Metrics */}
-              <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={6} w="full">
-                <ModernStatCard
-                  label="Total Pengguna Aktif"
-                  number={statistics?.overview?.total_users || 0}
-                  helpText="Pengguna berdaftar dalam sistem"
-                  icon={FaUsers}
-                  gradient="linear(to-br, purple.400, purple.600)"
-                  accentColor="purple.500"
-                  percentage={15}
-                  isLoading={loading}
-                />
-                
-                <ModernStatCard
-                  label="Fail Audio Dimuat Naik"
-                  number={statistics?.overview?.total_audio_files || 0}
-                  helpText={`${statistics?.overview?.recent_uploads || 0} dalam 30 hari`}
-                  icon={FaFileAudio}
-                  gradient="linear(to-br, blue.400, blue.600)"
-                  accentColor="blue.500"
-                  trend={statistics?.overview?.recent_uploads || 0}
-                  percentage={8}
-                  isLoading={loading}
-                />
-                
-                <ModernStatCard
-                  label="Transkrip Dijana"
-                  number={statistics?.overview?.total_transcripts || 0}
-                  helpText="Proses transkripsi selesai"
-                  icon={FaFileAlt}
-                  gradient="linear(to-br, green.400, green.600)"
-                  accentColor="green.500"
-                  trend={statistics?.overview?.recent_transcripts || 0}
-                  percentage={23}
-                  isLoading={loading}
-                />
-                
-                <ModernStatCard
-                  label="Laporan Diterbitkan"
-                  number={statistics?.overview?.total_reports || 0}
-                  helpText="Dokumen laporan siap"
-                  icon={FaCheck}
-                  gradient="linear(to-br, orange.400, orange.600)"
-                  accentColor="orange.500"
-                  trend={statistics?.overview?.recent_reports || 0}
-                  percentage={-5}
-                  isLoading={loading}
-                />
-              </SimpleGrid>
-
-              {/* Secondary Analytics Row */}
-              <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8} w="full">
-                <QuickInsights statistics={statistics} />
-                <ActivityChart title="Trend Keseluruhan" period={selectedPeriod} data={statistics} />
-              </SimpleGrid>
-            </VStack>
-          </TabPanel>
-
-          {/* Users Analytics Tab */}
-          <TabPanel>
-            <VStack spacing={8}>
-              {/* User Statistics Summary */}
-              {userStats && (
-                <SimpleGrid columns={{ base: 1, md: 4 }} spacing={6} width="full">
-                  <Card textAlign="center" p={6} bg="linear-gradient(135deg, purple.400, purple.600)" color="white" borderRadius="2xl">
-                    <Icon as={FaUserPlus} boxSize={10} mb={4} />
-                    <Text fontSize="3xl" fontWeight="900" mb={1}>
-                      {userStats.user_count}
-                    </Text>
-                    <Text fontSize="sm" fontWeight="600" opacity={0.9}>
-                      {selectedPeriod === 'all' ? 'Total Pengguna' : 'Pengguna Tempoh Ini'}
-                    </Text>
-                  </Card>
-                  
-                  <Card textAlign="center" p={6} bg="linear-gradient(135deg, green.400, green.600)" color="white" borderRadius="2xl">
-                    <Icon as={FaEye} boxSize={10} mb={4} />
-                    <Text fontSize="3xl" fontWeight="900" mb={1}>
-                      {userStats.users?.filter(u => u.last_login && u.last_login !== 'Never').length || 0}
-                    </Text>
-                    <Text fontSize="sm" fontWeight="600" opacity={0.9}>
-                      Pernah Log Masuk
-                    </Text>
-                  </Card>
-                  
-                  <Card textAlign="center" p={6} bg="linear-gradient(135deg, blue.400, blue.600)" color="white" borderRadius="2xl">
-                    <Icon as={FaArrowUp} boxSize={10} mb={4} />
-                    <Text fontSize="3xl" fontWeight="900" mb={1}>
-                      {userStats.users?.filter(u => {
-                        if (!u.last_login || u.last_login === 'Never') return false;
-                        const daysDiff = (new Date() - new Date(u.last_login)) / (1000 * 60 * 60 * 24);
-                        return daysDiff <= 7;
-                      }).length || 0}
-                    </Text>
-                    <Text fontSize="sm" fontWeight="600" opacity={0.9}>
-                      Aktif Seminggu
-                    </Text>
-                  </Card>
-                  
-                  <Card textAlign="center" p={6} bg="linear-gradient(135deg, red.400, red.600)" color="white" borderRadius="2xl">
-                    <Icon as={FaClock} boxSize={10} mb={4} />
-                    <Text fontSize="3xl" fontWeight="900" mb={1}>
-                      {userStats.users?.filter(u => {
-                        if (!u.last_login || u.last_login === 'Never') return true;
-                        const daysDiff = (new Date() - new Date(u.last_login)) / (1000 * 60 * 60 * 24);
-                        return daysDiff > 30;
-                      }).length || 0}
-                    </Text>
-                    <Text fontSize="sm" fontWeight="600" opacity={0.9}>
-                      Tidak Aktif
-                    </Text>
-                  </Card>
-                </SimpleGrid>
-              )}
-
-              {userLoading ? (
-                <Center py={16}>
-                  <VStack spacing={4}>
-                    <Spinner size="xl" color="primary.500" thickness="4px" />
-                    <Text color="gray.500" fontWeight="600">Memuat data pengguna...</Text>
-                  </VStack>
-                </Center>
-              ) : (
-                <UserActivityTable 
-                  users={userStats?.users || []} 
-                  period={selectedPeriod} 
-                />
-              )}
-            </VStack>
-          </TabPanel>
-
-          {/* Activity Trends Tab */}
-          <TabPanel>
-            <VStack spacing={8}>
-              <Box textAlign="center" mb={4}>
-                <Heading size="lg" color={headingColor} mb={2} fontWeight="800">
-                  Analisis Trend Aktiviti
-                </Heading>
-                <Text fontSize="lg" color="gray.500">
-                  Data terperinci untuk tempoh: {selectedPeriod === 'all' ? 'Semua masa' : selectedPeriod}
-                </Text>
-              </Box>
-              
-              <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8} w="full">
-                <ActivityChart 
-                  title="Upload Audio" 
-                  period={selectedPeriod} 
-                  data={statistics} 
-                />
-                <ActivityChart 
-                  title="Aktiviti Transkrip" 
-                  period={selectedPeriod} 
-                  data={statistics} 
-                />
-              </SimpleGrid>
-              
-              <ActivityChart 
-                title="Penjanaan Laporan (Bulanan)" 
-                period={selectedPeriod} 
-                data={statistics}
-              />
-            </VStack>
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
+        {/* Secondary Analytics Row */}
+        <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8} w="full">
+          <QuickInsights statistics={statistics} />
+          <ActivityChart 
+            title="Trend Keseluruhan" 
+            period={startDate && endDate ? 
+              `${startDate.toLocaleDateString('ms-MY')} - ${endDate.toLocaleDateString('ms-MY')}` : 
+              'Semua Masa'
+            } 
+            data={statistics} 
+          />
+        </SimpleGrid>
+      </VStack>
     </Container>
   );
 };
